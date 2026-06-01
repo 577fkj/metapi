@@ -509,7 +509,7 @@ export async function accountsRoutes(app: FastifyInstance) {
           .send({ success: false, message: parsedBody.error });
       }
 
-      const { siteId, username, password } = parsedBody.data;
+      const { siteId, username, password, rememberPassword } = parsedBody.data;
 
       // Get site info
       const site = await db
@@ -576,12 +576,14 @@ export async function accountsRoutes(app: FastifyInstance) {
 
       const extraConfigPatch: Record<string, unknown> = {
         credentialMode: "session",
-        autoRelogin: {
+      };
+      if (rememberPassword !== false) {
+        extraConfigPatch.autoRelogin = {
           username,
           passwordCipher: encryptAccountPassword(password),
           updatedAt: new Date().toISOString(),
-        },
-      };
+        };
+      }
       if (guessedPlatformUserId) {
         extraConfigPatch.platformUserId = guessedPlatformUserId;
       }
@@ -1512,6 +1514,31 @@ export async function accountsRoutes(app: FastifyInstance) {
         updates.extraConfig = mergeAccountExtraConfig(baseExtraConfig, {
           proxyUrl: normalizedProxy ?? undefined,
         });
+      }
+
+      if (Object.prototype.hasOwnProperty.call(body, "savedPassword")) {
+        const baseExtraConfig =
+          typeof updates.extraConfig === "string"
+            ? updates.extraConfig
+            : account.extraConfig;
+        const savedPassword = body.savedPassword;
+        if (typeof savedPassword === "string" && savedPassword.trim()) {
+          const currentUsername =
+            typeof updates.username === "string"
+              ? updates.username.trim()
+              : account.username;
+          updates.extraConfig = mergeAccountExtraConfig(baseExtraConfig, {
+            autoRelogin: {
+              username: currentUsername,
+              passwordCipher: encryptAccountPassword(savedPassword.trim()),
+              updatedAt: new Date().toISOString(),
+            },
+          });
+        } else {
+          updates.extraConfig = mergeAccountExtraConfig(baseExtraConfig, {
+            autoRelogin: undefined,
+          });
+        }
       }
 
       const nextAccessToken =

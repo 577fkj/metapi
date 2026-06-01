@@ -812,6 +812,7 @@ export const api = {
     siteId: number;
     username: string;
     password: string;
+    rememberPassword?: boolean;
   }) =>
     request("/api/accounts/login", {
       method: "POST",

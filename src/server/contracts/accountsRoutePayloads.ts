@@ -29,6 +29,7 @@ const accountUpdatePayloadSchema = z.object({
   isPinned: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
   proxyUrl: z.union([z.string(), z.null()]).optional(),
+  savedPassword: z.union([z.string(), z.null()]).optional(),
 }).passthrough();
 
 const accountBatchPayloadSchema = z.object({
@@ -52,6 +53,7 @@ const accountLoginPayloadSchema = z.object({
   siteId: z.number().int().positive(),
   username: z.string(),
   password: z.string(),
+  rememberPassword: z.boolean().optional(),
 }).passthrough();
 
 const accountVerifyTokenPayloadSchema = z.object({

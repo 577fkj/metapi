@@ -73,7 +73,7 @@ const ACCOUNT_SEGMENTS: Array<{
 const SITE_SELECT_SEARCH_PLACEHOLDER = "筛选站点（名称 / 平台 / URL）";
 
 function createLoginForm() {
-  return { siteId: 0, username: "", password: "" };
+  return { siteId: 0, username: "", password: "", rememberPassword: true };
 }
 
 function createTokenForm(credentialMode: "session" | "apikey" = "session") {
@@ -157,6 +157,7 @@ export default function Accounts() {
     refreshToken: "",
     tokenExpiresAt: "",
     proxyUrl: "",
+    savedPassword: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [rebindTarget, setRebindTarget] = useState<any | null>(null);
@@ -951,6 +952,7 @@ export default function Accounts() {
       refreshToken: managedAuth.refreshToken,
       tokenExpiresAt: managedAuth.tokenExpiresAt,
       proxyUrl,
+      savedPassword: "",
     });
   };
 
@@ -978,6 +980,9 @@ export default function Accounts() {
           ? Number.parseInt(editForm.tokenExpiresAt.trim(), 10)
           : null,
         proxyUrl: editForm.proxyUrl.trim() || null,
+        ...(editForm.savedPassword.trim()
+          ? { savedPassword: editForm.savedPassword.trim() }
+          : {}),
       });
       toast.success("账号已更新");
       closeEditPanel();
@@ -2036,6 +2041,28 @@ export default function Accounts() {
                       onKeyDown={(e) => e.key === "Enter" && handleLoginAdd()}
                       style={inputStyle}
                     />
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        userSelect: "none",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={loginForm.rememberPassword}
+                        onChange={(e) =>
+                          setLoginForm((f) => ({
+                            ...f,
+                            rememberPassword: e.target.checked,
+                          }))
+                        }
+                      />
+                      记住密码（用于 session 过期后自动重新登录）
+                    </label>
                     <button
                       onClick={handleLoginAdd}
                       disabled={
@@ -2707,6 +2734,29 @@ export default function Accounts() {
                 >
                   覆盖站点和系统代理，留空则使用站点设置。支持 http/https/socks5
                   协议。
+                </div>
+                <input
+                  type="password"
+                  placeholder="更新记住的密码（留空则不修改）"
+                  value={editForm.savedPassword}
+                  onChange={(e) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      savedPassword: e.target.value,
+                    }))
+                  }
+                  style={inputStyle}
+                />
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--color-text-muted)",
+                    marginTop: -4,
+                  }}
+                >
+                  {parseAccountExtraConfig(editingAccount)?.autoRelogin?.passwordCipher
+                    ? "当前已保存密码（session 过期时可自动重登录）。输入新密码可更新，留空则保留现有密码。"
+                    : "当前未保存密码。输入密码后保存，可在 session 过期时自动重新登录。"}
                 </div>
                 {(editingAccount?.site?.platform || "").toLowerCase() ===
                   "sub2api" && (
