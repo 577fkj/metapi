@@ -12,6 +12,7 @@ import {
 import { parseCheckinRewardAmount } from "./checkinRewardParser.js";
 import { getLocalDayRangeUtc } from "./localTimeService.js";
 import {
+  clearSnapshotCache,
   readSnapshotCache,
   type SnapshotEnvelope,
 } from "./snapshotCacheService.js";
@@ -214,6 +215,10 @@ async function loadAccountsSnapshotPayload(): Promise<AccountsSnapshotPayload> {
     }),
     sites,
   };
+}
+
+export function invalidateAccountsSnapshot() {
+  clearSnapshotCache('accounts-snapshot');
 }
 
 export async function getAccountsSnapshot(options?: {

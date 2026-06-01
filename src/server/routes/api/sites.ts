@@ -8,6 +8,7 @@ import { formatUtcSqlDateTime } from '../../services/localTimeService.js';
 import { invalidateTokenRouterCache } from '../../services/tokenRouter.js';
 import { parseSiteCustomHeadersInput } from '../../services/siteCustomHeaders.js';
 import { getSub2ApiSubscriptionFromExtraConfig } from '../../services/accountExtraConfig.js';
+import { invalidateAccountsSnapshot } from '../../services/accountsOverviewService.js';
 import {
   parseSiteBatchPayload,
   parseSiteCreatePayload,
@@ -378,6 +379,7 @@ export async function sitesRoutes(app: FastifyInstance) {
   function invalidateSiteCaches() {
     invalidateSiteProxyCache();
     invalidateTokenRouterCache();
+    invalidateAccountsSnapshot();
   }
 
   async function applySiteStatusSideEffects(
