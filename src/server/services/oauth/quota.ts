@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { fetch } from 'undici';
+import { config } from '../../config.js';
 import { db, schema } from '../../db/index.js';
 import { mergeAccountExtraConfig } from '../accountExtraConfig.js';
 import { runWithSiteApiEndpointPool } from '../siteApiEndpointService.js';
@@ -48,7 +49,6 @@ type NormalizedCodexQuotaHeaders = {
   };
 };
 
-const CODEX_QUOTA_PROBE_MODEL = 'gpt-5.4';
 const CODEX_QUOTA_PROBE_VERSION = '0.101.0';
 const CODEX_QUOTA_PROBE_USER_AGENT = 'codex_cli_rs/0.101.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464';
 const CODEX_QUOTA_PROBE_BETA = 'responses-2025-03-11';
@@ -534,7 +534,7 @@ export async function recordOauthQuotaHeadersSnapshot(input: {
 
 function buildCodexQuotaProbePayload(): Record<string, unknown> {
   return {
-    model: CODEX_QUOTA_PROBE_MODEL,
+    model: config.codexQuotaProbeModel,
     input: [
       {
         role: 'user',

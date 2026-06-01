@@ -69,6 +69,7 @@ type RuntimeSettings = {
   logCleanupRetentionDays: number;
   modelAvailabilityProbeEnabled: boolean;
   codexUpstreamWebsocketEnabled: boolean;
+  codexQuotaProbeModel: string;
   responsesCompactFallbackToResponsesEnabled: boolean;
   disableCrossProtocolFallback: boolean;
   proxySessionChannelConcurrencyLimit: number;
@@ -351,6 +352,7 @@ export default function Settings() {
     logCleanupRetentionDays: 30,
     modelAvailabilityProbeEnabled: false,
     codexUpstreamWebsocketEnabled: false,
+    codexQuotaProbeModel: 'gpt-5.4',
     responsesCompactFallbackToResponsesEnabled: false,
     disableCrossProtocolFallback: false,
     proxySessionChannelConcurrencyLimit: 2,
@@ -676,6 +678,9 @@ export default function Settings() {
           : 30,
         modelAvailabilityProbeEnabled: !!runtimeInfo.modelAvailabilityProbeEnabled,
         codexUpstreamWebsocketEnabled: !!runtimeInfo.codexUpstreamWebsocketEnabled,
+        codexQuotaProbeModel: typeof runtimeInfo.codexQuotaProbeModel === 'string' && runtimeInfo.codexQuotaProbeModel
+          ? runtimeInfo.codexQuotaProbeModel
+          : 'gpt-5.4',
         responsesCompactFallbackToResponsesEnabled: !!runtimeInfo.responsesCompactFallbackToResponsesEnabled,
         disableCrossProtocolFallback: !!runtimeInfo.disableCrossProtocolFallback,
         proxySessionChannelConcurrencyLimit: Number(runtimeInfo.proxySessionChannelConcurrencyLimit) >= 0
@@ -892,6 +897,7 @@ export default function Settings() {
     try {
       const res = await api.updateRuntimeSettings({
         codexUpstreamWebsocketEnabled: runtime.codexUpstreamWebsocketEnabled,
+        codexQuotaProbeModel: runtime.codexQuotaProbeModel,
         responsesCompactFallbackToResponsesEnabled: runtime.responsesCompactFallbackToResponsesEnabled,
         proxySessionChannelConcurrencyLimit: runtime.proxySessionChannelConcurrencyLimit,
         proxySessionChannelQueueWaitMs: runtime.proxySessionChannelQueueWaitMs,
@@ -901,6 +907,9 @@ export default function Settings() {
         codexUpstreamWebsocketEnabled: typeof res?.codexUpstreamWebsocketEnabled === 'boolean'
           ? res.codexUpstreamWebsocketEnabled
           : prev.codexUpstreamWebsocketEnabled,
+        codexQuotaProbeModel: typeof res?.codexQuotaProbeModel === 'string' && res.codexQuotaProbeModel
+          ? res.codexQuotaProbeModel
+          : prev.codexQuotaProbeModel,
         responsesCompactFallbackToResponsesEnabled: typeof res?.responsesCompactFallbackToResponsesEnabled === 'boolean'
           ? res.responsesCompactFallbackToResponsesEnabled
           : prev.responsesCompactFallbackToResponsesEnabled,
@@ -1863,6 +1872,21 @@ export default function Settings() {
               />
               <div style={settingsModernFieldHintStyle}>
                 超过该时间仍拿不到会话通道时，本次请求会直接放弃排队，避免长期挂起。
+              </div>
+            </div>
+          </ResponsiveFormGrid>
+          <ResponsiveFormGrid columns={2}>
+            <div style={settingsModernFieldCardStyle}>
+              <div style={settingsModernFieldLabelStyle}>Codex 配额探测模型</div>
+              <input
+                type="text"
+                placeholder="gpt-5.4"
+                value={runtime.codexQuotaProbeModel}
+                onChange={(e) => setRuntime((prev) => ({ ...prev, codexQuotaProbeModel: e.target.value }))}
+                style={inputStyle}
+              />
+              <div style={settingsModernFieldHintStyle}>
+                用于 Codex OAuth 配额探测的模型名称。留空则使用默认值 gpt-5.4。也可通过环境变量 CODEX_QUOTA_PROBE_MODEL 设置。
               </div>
             </div>
           </ResponsiveFormGrid>

@@ -54,6 +54,7 @@ interface RuntimeSettingsBody {
   payloadRules?: unknown;
   modelAvailabilityProbeEnabled?: boolean;
   codexUpstreamWebsocketEnabled?: boolean;
+  codexQuotaProbeModel?: string;
   responsesCompactFallbackToResponsesEnabled?: boolean;
   disableCrossProtocolFallback?: boolean;
   proxySessionChannelConcurrencyLimit?: number;
@@ -723,6 +724,7 @@ function getRuntimeSettingsResponse(currentAdminIp = '') {
     logCleanupRetentionDays: config.logCleanupRetentionDays,
     modelAvailabilityProbeEnabled: config.modelAvailabilityProbeEnabled,
     codexUpstreamWebsocketEnabled: config.codexUpstreamWebsocketEnabled,
+    codexQuotaProbeModel: config.codexQuotaProbeModel,
     responsesCompactFallbackToResponsesEnabled: config.responsesCompactFallbackToResponsesEnabled,
     disableCrossProtocolFallback: config.disableCrossProtocolFallback,
     proxySessionChannelConcurrencyLimit: config.proxySessionChannelConcurrencyLimit,
@@ -1196,6 +1198,16 @@ export async function settingsRoutes(app: FastifyInstance) {
       }
       config.codexUpstreamWebsocketEnabled = nextValue;
       upsertSetting('codex_upstream_websocket_enabled', config.codexUpstreamWebsocketEnabled);
+    }
+
+    if (body.codexQuotaProbeModel !== undefined) {
+      const nextModel = String(body.codexQuotaProbeModel || '').trim();
+      const normalizedModel = nextModel || 'gpt-5.4';
+      if (normalizedModel !== config.codexQuotaProbeModel) {
+        changedLabels.push('Codex 配额探测模型');
+      }
+      config.codexQuotaProbeModel = normalizedModel;
+      upsertSetting('codex_quota_probe_model', config.codexQuotaProbeModel);
     }
 
     if (body.responsesCompactFallbackToResponsesEnabled !== undefined) {

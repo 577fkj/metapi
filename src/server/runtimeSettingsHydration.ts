@@ -58,6 +58,11 @@ export function applyRuntimeSettings(settingsMap: Map<string, string>) {
     config.codexUpstreamWebsocketEnabled = codexUpstreamWebsocketEnabled;
   }
 
+  const codexQuotaProbeModel = parseSettingFromMap<string>(settingsMap, 'codex_quota_probe_model');
+  if (typeof codexQuotaProbeModel === 'string' && codexQuotaProbeModel.trim()) {
+    config.codexQuotaProbeModel = codexQuotaProbeModel.trim();
+  }
+
   const responsesCompactFallbackToResponsesEnabled = parseSettingFromMap<boolean>(settingsMap, 'responses_compact_fallback_to_responses_enabled');
   if (typeof responsesCompactFallbackToResponsesEnabled === 'boolean') {
     config.responsesCompactFallbackToResponsesEnabled = responsesCompactFallbackToResponsesEnabled;
