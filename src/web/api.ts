@@ -841,6 +841,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  reloginAccount: (
+    id: number,
+    data?: {
+      username?: string;
+      password?: string;
+      rememberPassword?: boolean;
+    },
+  ) =>
+    request(`/api/accounts/${id}/relogin`, {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }),
   updateAccount: (id: number, data: any) =>
     request(`/api/accounts/${id}`, {
       method: "PUT",

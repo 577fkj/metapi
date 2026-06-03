@@ -46,6 +46,7 @@ import {
   parseAccountLoginPayload,
   parseAccountManualModelsPayload,
   parseAccountRebindSessionPayload,
+  parseAccountReloginPayload,
   parseAccountUpdatePayload,
   parseAccountVerifyTokenPayload,
 } from "../../contracts/accountsRoutePayloads.js";
@@ -58,6 +59,10 @@ import {
   parseBatchApiKeys,
 } from "../../services/apiKeyBatch.js";
 import { createManualAccount } from "../../services/manualAccountCreationService.js";
+import {
+  attemptAccountPasswordRelogin,
+  hasSavedAccountReloginPassword,
+} from "../../services/accountReloginService.js";
 
 type AccountWithSiteRow = {
   accounts: typeof schema.accounts.$inferSelect;
@@ -1260,6 +1265,91 @@ export async function accountsRoutes(app: FastifyInstance) {
           ? buildCapabilitiesForAccount(latest)
           : buildCapabilitiesFromCredentialMode("session", true, null),
         apiTokenFound: !!nextApiToken,
+      };
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    "/api/accounts/:id/relogin",
+    async (request, reply) => {
+      const parsedBody = parseAccountReloginPayload(request.body);
+      if (!parsedBody.success) {
+        return reply
+          .code(400)
+          .send({ success: false, message: parsedBody.error });
+      }
+
+      const accountId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(accountId) || accountId <= 0) {
+        return reply
+          .code(400)
+          .send({ success: false, message: "账号 ID 无效" });
+      }
+
+      const row = await db
+        .select()
+        .from(schema.accounts)
+        .innerJoin(schema.sites, eq(schema.accounts.siteId, schema.sites.id))
+        .where(eq(schema.accounts.id, accountId))
+        .get();
+      if (!row) {
+        return reply.code(404).send({ success: false, message: "账号不存在" });
+      }
+
+      const username = (parsedBody.data.username || "").trim();
+      const password = (parsedBody.data.password || "").trim();
+      if ((username && !password) || (!username && password)) {
+        return reply
+          .code(400)
+          .send({ success: false, message: "请同时提供用户名和密码" });
+      }
+      if (!username && !hasSavedAccountReloginPassword(row.accounts)) {
+        return reply
+          .code(400)
+          .send({ success: false, message: "当前账号没有保存的登录密码" });
+      }
+
+      const relogin = await attemptAccountPasswordRelogin({
+        account: row.accounts,
+        site: row.sites,
+        source: "manual",
+        credentials: username && password
+          ? {
+              username,
+              password,
+              rememberPassword: parsedBody.data.rememberPassword,
+            }
+          : undefined,
+        log: true,
+      });
+      if (!relogin.success) {
+        return reply
+          .code(400)
+          .send({ success: false, message: relogin.message });
+      }
+
+      await convergeAccountMutation({
+        accountId,
+        preferredApiToken: row.accounts.apiToken,
+        defaultTokenSource: "sync",
+        refreshBalance: true,
+        refreshModels: true,
+        rebuildRoutes: true,
+        continueOnError: true,
+      });
+
+      const latest = await db
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.id, accountId))
+        .get();
+      return {
+        success: true,
+        account: latest,
+        credentialMode: "session",
+        capabilities: latest
+          ? buildCapabilitiesForAccount(latest)
+          : buildCapabilitiesFromCredentialMode("session", true, null),
       };
     },
   );

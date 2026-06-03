@@ -98,6 +98,10 @@ function createRebindForm(platformUserId = "") {
   };
 }
 
+function createReloginForm(username = "") {
+  return { username, password: "", rememberPassword: true };
+}
+
 function resolveConnectionsSegment(search: string): ConnectionsSegment {
   const rawSegment = new URLSearchParams(search).get("segment");
   if (rawSegment === "apikey" || rawSegment === "tokens") return rawSegment;
@@ -165,6 +169,9 @@ export default function Accounts() {
   const [rebindVerifyResult, setRebindVerifyResult] = useState<any>(null);
   const [rebindVerifying, setRebindVerifying] = useState(false);
   const [rebindSaving, setRebindSaving] = useState(false);
+  const [reloginTarget, setReloginTarget] = useState<any | null>(null);
+  const [reloginForm, setReloginForm] = useState(() => createReloginForm());
+  const [reloginSaving, setReloginSaving] = useState(false);
   const [modelModal, setModelModal] = useState<{
     open: boolean;
     account: any | null;
@@ -326,6 +333,7 @@ export default function Accounts() {
     if (activeSegment !== "tokens") return;
     closeAddPanel();
     if (rebindTarget) closeRebindPanel();
+    if (reloginTarget) closeReloginPanel();
     setEditingAccount(null);
   }, [activeSegment]);
 
@@ -922,6 +930,9 @@ export default function Accounts() {
     }
   };
 
+  const hasSavedReloginPassword = (account: any) =>
+    !!parseAccountExtraConfig(account)?.autoRelogin?.passwordCipher;
+
   const extractManagedSub2ApiAuth = (account: any) => {
     const parsed = parseAccountExtraConfig(account);
     const auth = parsed?.sub2apiAuth || {};
@@ -937,6 +948,7 @@ export default function Accounts() {
     const proxyUrl = parseAccountExtraConfig(account)?.proxyUrl || "";
     closeAddPanel();
     setRebindTarget(null);
+    setReloginTarget(null);
     setEditingAccount(account);
     setEditForm({
       username: account?.username || "",
@@ -1109,6 +1121,7 @@ export default function Accounts() {
   const openRebindPanel = (account: any) => {
     closeAddPanel();
     setEditingAccount(null);
+    setReloginTarget(null);
     setRebindTarget(account);
     setRebindForm(createRebindForm(extractPlatformUserId(account)));
     setRebindVerifyResult(null);
@@ -1120,6 +1133,20 @@ export default function Accounts() {
     setRebindVerifyResult(null);
     setRebindVerifying(false);
     setRebindSaving(false);
+  };
+
+  const openReloginPanel = (account: any) => {
+    closeAddPanel();
+    closeRebindPanel();
+    setEditingAccount(null);
+    setReloginTarget(account);
+    setReloginForm(createReloginForm(account?.username || ""));
+  };
+
+  const closeReloginPanel = () => {
+    setReloginTarget(null);
+    setReloginForm(createReloginForm());
+    setReloginSaving(false);
   };
 
   const handleVerifyRebindToken = async () => {
@@ -1189,6 +1216,37 @@ export default function Accounts() {
       toast.error(e.message || "重新绑定失败");
     } finally {
       setRebindSaving(false);
+    }
+  };
+
+  const handleSubmitRelogin = async () => {
+    if (!reloginTarget) return;
+    const username = reloginForm.username.trim();
+    const password = reloginForm.password.trim();
+    const hasSavedPassword = hasSavedReloginPassword(reloginTarget);
+    const wantsNewCredentials = password.length > 0;
+    if (!hasSavedPassword && (!username || !password)) {
+      toast.error("请输入用户名和密码");
+      return;
+    }
+    if (wantsNewCredentials && !username) {
+      toast.error("请同时填写用户名和密码");
+      return;
+    }
+
+    setReloginSaving(true);
+    try {
+      await api.reloginAccount(reloginTarget.id, {
+        ...(wantsNewCredentials ? { username, password } : {}),
+        rememberPassword: reloginForm.rememberPassword,
+      });
+      toast.success("账号重新登录成功，状态已恢复");
+      closeReloginPanel();
+      load(true);
+    } catch (e: any) {
+      toast.error(e.message || "重新登录失败");
+    } finally {
+      setReloginSaving(false);
     }
   };
 
@@ -2602,6 +2660,112 @@ export default function Accounts() {
             </CenteredModal>
           )}
 
+          {activeSegment === "session" && (
+            <CenteredModal
+              open={Boolean(reloginTarget)}
+              onClose={closeReloginPanel}
+              title="重新登录账号"
+              maxWidth={720}
+              bodyStyle={{ display: "flex", flexDirection: "column", gap: 12 }}
+              footer={
+                <>
+                  <button onClick={closeReloginPanel} className="btn btn-ghost">
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSubmitRelogin}
+                    disabled={reloginSaving}
+                    className="btn btn-success"
+                  >
+                    {reloginSaving ? (
+                      <>
+                        <span
+                          className="spinner spinner-sm"
+                          style={{
+                            borderTopColor: "white",
+                            borderColor: "rgba(255,255,255,0.3)",
+                          }}
+                        />
+                        登录中...
+                      </>
+                    ) : (
+                      "确认重新登录"
+                    )}
+                  </button>
+                </>
+              }
+            >
+              {reloginTarget ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--color-text-muted)",
+                    }}
+                  >
+                    连接: {resolveAccountDisplayName(reloginTarget)} @{" "}
+                    {reloginTarget.site?.name || "-"}。
+                    {hasSavedReloginPassword(reloginTarget)
+                      ? "已保存登录密码，可直接提交；填写新密码会更新保存信息。"
+                      : "当前未保存登录密码，请填写用户名和密码。"}
+                  </div>
+                  <input
+                    placeholder="用户名"
+                    value={reloginForm.username}
+                    onChange={(e) =>
+                      setReloginForm((prev) => ({
+                        ...prev,
+                        username: e.target.value,
+                      }))
+                    }
+                    style={inputStyle}
+                  />
+                  <input
+                    type="password"
+                    placeholder={
+                      hasSavedReloginPassword(reloginTarget)
+                        ? "新密码（留空使用已保存密码）"
+                        : "密码"
+                    }
+                    value={reloginForm.password}
+                    onChange={(e) =>
+                      setReloginForm((prev) => ({
+                        ...prev,
+                        password: e.target.value,
+                      }))
+                    }
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && handleSubmitRelogin()
+                    }
+                    style={inputStyle}
+                  />
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={reloginForm.rememberPassword}
+                      onChange={(e) =>
+                        setReloginForm((prev) => ({
+                          ...prev,
+                          rememberPassword: e.target.checked,
+                        }))
+                      }
+                    />
+                    保存本次密码，用于之后自动重新登录
+                  </label>
+                </>
+              ) : null}
+            </CenteredModal>
+          )}
+
           <CenteredModal
             open={Boolean(editingAccount)}
             onClose={closeEditPanel}
@@ -3102,12 +3266,20 @@ export default function Accounts() {
                               )}
                               {a.status === "expired" &&
                                 !capabilities.proxyOnly && (
-                                  <button
-                                    onClick={() => openRebindPanel(a)}
-                                    className="btn btn-link btn-link-warning"
-                                  >
-                                    重新绑定
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => openRebindPanel(a)}
+                                      className="btn btn-link btn-link-warning"
+                                    >
+                                      重新绑定
+                                    </button>
+                                    <button
+                                      onClick={() => openReloginPanel(a)}
+                                      className="btn btn-link btn-link-warning"
+                                    >
+                                      重新登录
+                                    </button>
+                                  </>
                                 )}
                               <button
                                 onClick={() =>
@@ -3433,12 +3605,20 @@ export default function Accounts() {
                               )}
                               {a.status === "expired" &&
                                 !capabilities.proxyOnly && (
-                                  <button
-                                    onClick={() => openRebindPanel(a)}
-                                    className="btn btn-link btn-link-warning"
-                                  >
-                                    重新绑定
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => openRebindPanel(a)}
+                                      className="btn btn-link btn-link-warning"
+                                    >
+                                      重新绑定
+                                    </button>
+                                    <button
+                                      onClick={() => openReloginPanel(a)}
+                                      className="btn btn-link btn-link-warning"
+                                    >
+                                      重新登录
+                                    </button>
+                                  </>
                                 )}
                               <button
                                 onClick={() => openEditPanel(a)}
