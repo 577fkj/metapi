@@ -72,6 +72,7 @@ vi.mock('./notifyService.js', () => ({
 
 vi.mock('./accountCredentialService.js', () => ({
   decryptAccountPassword: (...args: unknown[]) => decryptPasswordMock(...args),
+  encryptAccountPassword: vi.fn((password: string) => `encrypted:${password}`),
 }));
 
 vi.mock('./accountHealthService.js', () => ({
@@ -141,6 +142,11 @@ describe('balanceService auto relogin', () => {
     expect(adapterMock.getBalance.mock.calls[0][1]).toBe('stale-token');
     expect(adapterMock.getBalance.mock.calls[1][1]).toBe('fresh-token');
     expect(updateSetMock.mock.calls.some((call) => call[0]?.accessToken === 'fresh-token')).toBe(true);
+    expect(insertValuesMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: '账号重新登录成功',
+      relatedId: 1,
+      relatedType: 'account',
+    }));
     expect(reportTokenExpiredMock).not.toHaveBeenCalled();
   });
 

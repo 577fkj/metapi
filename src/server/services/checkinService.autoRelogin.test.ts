@@ -76,6 +76,7 @@ vi.mock('./balanceService.js', () => ({
 
 vi.mock('./accountCredentialService.js', () => ({
   decryptAccountPassword: (...args: unknown[]) => decryptPasswordMock(...args),
+  encryptAccountPassword: vi.fn((password: string) => `encrypted:${password}`),
 }));
 
 describe('checkinService auto relogin', () => {

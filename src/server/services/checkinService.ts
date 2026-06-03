@@ -7,17 +7,16 @@ import { reportTokenExpired } from './alertService.js';
 import { refreshBalance } from './balanceService.js';
 import { parseCheckinRewardAmount } from './checkinRewardParser.js';
 import {
-  getAutoReloginConfig,
   getPlatformUserIdFromExtraConfig,
   guessPlatformUserIdFromUsername,
   mergeAccountExtraConfig,
   resolveProxyUrlFromExtraConfig,
   resolvePlatformUserId,
 } from './accountExtraConfig.js';
-import { decryptAccountPassword } from './accountCredentialService.js';
 import { setAccountRuntimeHealth } from './accountHealthService.js';
 import { formatUtcSqlDateTime } from './localTimeService.js';
 import { withAccountProxyOverride } from './siteProxy.js';
+import { attemptAccountPasswordRelogin } from './accountReloginService.js';
 
 type CheckinExecutionStatus = 'success' | 'failed' | 'skipped';
 
@@ -92,34 +91,6 @@ function inferRewardFromBalanceDelta(previousBalance: unknown, latestBalance: un
   return Math.round(delta * 1_000_000) / 1_000_000;
 }
 
-async function tryAutoRelogin(account: any, site: any): Promise<string | null> {
-  const adapter = getAdapter(site.platform);
-  if (!adapter) return null;
-
-  const relogin = getAutoReloginConfig(account.extraConfig);
-  if (!relogin) return null;
-
-  const password = decryptAccountPassword(relogin.passwordCipher);
-  if (!password) return null;
-
-  const result = await withAccountProxyOverride(
-    resolveProxyUrlFromExtraConfig(account.extraConfig),
-    () => adapter.login(site.url, relogin.username, password),
-  );
-  if (!result.success || !result.accessToken) return null;
-
-  await db.update(schema.accounts)
-    .set({
-      accessToken: result.accessToken,
-      updatedAt: new Date().toISOString(),
-      status: account.status === 'expired' ? 'active' : account.status,
-    })
-    .where(eq(schema.accounts.id, account.id))
-    .run();
-
-  return result.accessToken;
-}
-
 export async function checkinAccount(accountId: number, options?: { skipEvent?: boolean; scheduleMode?: 'cron' | 'interval' }) {
   const rows = await db
     .select()
@@ -183,9 +154,14 @@ export async function checkinAccount(accountId: number, options?: { skipEvent?: 
     () => adapter.checkin(site.url, activeAccessToken, platformUserId));
 
   if (!result.success && shouldAttemptAutoRelogin(result.message)) {
-    const refreshedAccessToken = await tryAutoRelogin(account, site);
-    if (refreshedAccessToken) {
-      activeAccessToken = refreshedAccessToken;
+    const relogin = await attemptAccountPasswordRelogin({
+      account,
+      site,
+      source: 'auto-checkin',
+      log: true,
+    });
+    if (relogin.success) {
+      activeAccessToken = relogin.accessToken;
       result = await withAccountProxyOverride(accountProxyUrl,
         () => adapter.checkin(site.url, activeAccessToken, platformUserId));
     }

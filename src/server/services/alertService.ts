@@ -4,6 +4,7 @@ import { sendNotification } from './notifyService.js';
 import { setAccountRuntimeHealth } from './accountHealthService.js';
 import { appendSessionTokenRebindHint } from './alertRules.js';
 import { formatUtcSqlDateTime } from './localTimeService.js';
+import { attemptAccountPasswordRelogin } from './accountReloginService.js';
 
 export async function reportTokenExpired(params: {
   accountId: number;
@@ -11,6 +12,21 @@ export async function reportTokenExpired(params: {
   siteName?: string | null;
   detail?: string;
 }) {
+  const row = await db.select()
+    .from(schema.accounts)
+    .innerJoin(schema.sites, eq(schema.accounts.siteId, schema.sites.id))
+    .where(eq(schema.accounts.id, params.accountId))
+    .get();
+  if (row) {
+    const relogin = await attemptAccountPasswordRelogin({
+      account: row.accounts,
+      site: row.sites,
+      source: 'token-expired',
+      log: true,
+    });
+    if (relogin.success) return;
+  }
+
   const accountLabel = params.username || `ID:${params.accountId}`;
   const siteLabel = params.siteName || 'unknown-site';
   const detailText = params.detail ? appendSessionTokenRebindHint(params.detail) : '';
