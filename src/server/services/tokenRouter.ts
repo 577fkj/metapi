@@ -35,6 +35,10 @@ import {
   type RouteDecisionCandidate,
   type RouteMode,
 } from '../../shared/tokenRouteContract.js';
+import {
+  canAccountRouteApiKey,
+  isAccountSessionActive,
+} from './accountLifecycleStatus.js';
 
 interface RouteMatch {
   route: RouteRow;
@@ -68,6 +72,11 @@ interface SelectedChannel {
 type FailureAwareChannel = {
   failCount?: number | null;
   lastFailAt?: string | null;
+};
+
+type ResolvedChannelToken = {
+  value: string;
+  source: 'account_token' | 'account_api_token' | 'oauth_access_token';
 };
 
 type SiteRuntimeFailureContext = {
@@ -3070,13 +3079,23 @@ export class TokenRouter {
     return await loadRouteMatch(route);
   }
 
+  private resolveRouteUnitMemberToken(candidate: {
+    account: typeof schema.accounts.$inferSelect;
+  }): ResolvedChannelToken | null {
+    const apiToken = candidate.account.apiToken?.trim();
+    if (!isAccountSessionActive(candidate.account.status)) {
+      return apiToken ? { value: apiToken, source: 'account_api_token' } : null;
+    }
+
+    const oauthAccessToken = candidate.account.accessToken?.trim();
+    if (oauthAccessToken) return { value: oauthAccessToken, source: 'oauth_access_token' };
+    return apiToken ? { value: apiToken, source: 'account_api_token' } : null;
+  }
+
   private resolveRouteUnitMemberTokenValue(candidate: {
     account: typeof schema.accounts.$inferSelect;
   }): string | null {
-    const oauthAccessToken = candidate.account.accessToken?.trim();
-    if (oauthAccessToken) return oauthAccessToken;
-    const apiToken = candidate.account.apiToken?.trim();
-    return apiToken || null;
+    return this.resolveRouteUnitMemberToken(candidate)?.value || null;
   }
 
   private buildRouteUnitMemberDispatchCandidate(
@@ -3106,7 +3125,12 @@ export class TokenRouter {
 
     if (!outerCandidate.channel.enabled) reasonParts.push('通道禁用');
 
-    if (memberCandidate.account.status !== 'active') {
+    const resolvedToken = this.resolveRouteUnitMemberToken(memberCandidate);
+    if (resolvedToken?.source === 'account_api_token') {
+      if (!canAccountRouteApiKey(memberCandidate.account.status)) {
+        reasonParts.push(`账号状态=${memberCandidate.account.status}`);
+      }
+    } else if (!isAccountSessionActive(memberCandidate.account.status)) {
       reasonParts.push(`账号状态=${memberCandidate.account.status}`);
     }
 
@@ -3122,8 +3146,7 @@ export class TokenRouter {
       reasonParts.push(downstreamExclusionReason);
     }
 
-    const tokenValue = this.resolveRouteUnitMemberTokenValue(memberCandidate);
-    if (!tokenValue) reasonParts.push('令牌不可用');
+    if (!resolvedToken) reasonParts.push('令牌不可用');
 
     if (isOauthRouteUnitMemberCoolingDown(memberCandidate.member, nowIso)) {
       reasonParts.push('冷却中');
@@ -3246,29 +3269,43 @@ export class TokenRouter {
     }
   }
 
+  private resolveChannelToken(candidate: {
+    channel: typeof schema.routeChannels.$inferSelect;
+    account: typeof schema.accounts.$inferSelect;
+    site?: typeof schema.sites.$inferSelect | null;
+    token: typeof schema.accountTokens.$inferSelect | null;
+  }): ResolvedChannelToken | null {
+    if (candidate.channel.tokenId) {
+      if (!candidate.token) return null;
+      if (!isUsableAccountToken(candidate.token)) return null;
+      const token = candidate.token.token?.trim();
+      return token ? { value: token, source: 'account_token' } : null;
+    }
+
+    if (getOauthInfoFromAccount(candidate.account)) {
+      const apiToken = candidate.account.apiToken?.trim();
+      if (!isAccountSessionActive(candidate.account.status)) {
+        return apiToken ? { value: apiToken, source: 'account_api_token' } : null;
+      }
+
+      const accessToken = candidate.account.accessToken?.trim();
+      if (accessToken) return { value: accessToken, source: 'oauth_access_token' };
+      return apiToken ? { value: apiToken, source: 'account_api_token' } : null;
+    }
+
+    const fallback = candidate.account.apiToken?.trim();
+    if (fallback) return { value: fallback, source: 'account_api_token' };
+
+    return null;
+  }
+
   private resolveChannelTokenValue(candidate: {
     channel: typeof schema.routeChannels.$inferSelect;
     account: typeof schema.accounts.$inferSelect;
     site?: typeof schema.sites.$inferSelect | null;
     token: typeof schema.accountTokens.$inferSelect | null;
   }): string | null {
-    if (candidate.channel.tokenId) {
-      if (!candidate.token) return null;
-      if (!isUsableAccountToken(candidate.token)) return null;
-      const token = candidate.token.token?.trim();
-      return token ? token : null;
-    }
-
-    if (getOauthInfoFromAccount(candidate.account)) {
-      const accessToken = candidate.account.accessToken?.trim();
-      if (accessToken) return accessToken;
-      return null;
-    }
-
-    const fallback = candidate.account.apiToken?.trim();
-    if (fallback) return fallback;
-
-    return null;
+    return this.resolveChannelToken(candidate)?.value || null;
   }
 
   private resolveDownstreamExclusionReason(
@@ -3347,11 +3384,16 @@ export class TokenRouter {
       return reasonParts;
     }
 
+    const resolvedToken = this.resolveChannelToken(candidate);
     if (isExplicitTokenChannel(candidate)) {
-      if (candidate.account.status === 'disabled') {
+      if (!canAccountRouteApiKey(candidate.account.status)) {
         reasonParts.push(`账号状态=${candidate.account.status}`);
       }
-    } else if (candidate.account.status !== 'active') {
+    } else if (resolvedToken?.source === 'account_api_token') {
+      if (!canAccountRouteApiKey(candidate.account.status)) {
+        reasonParts.push(`账号状态=${candidate.account.status}`);
+      }
+    } else if (!isAccountSessionActive(candidate.account.status)) {
       reasonParts.push(`账号状态=${candidate.account.status}`);
     }
 
@@ -3368,8 +3410,7 @@ export class TokenRouter {
       reasonParts.push('当前请求已尝试');
     }
 
-    const tokenValue = this.resolveChannelTokenValue(candidate);
-    if (!tokenValue) reasonParts.push('令牌不可用');
+    if (!resolvedToken) reasonParts.push('令牌不可用');
 
     if (candidate.channel.cooldownUntil && candidate.channel.cooldownUntil > nowIso) {
       reasonParts.push('冷却中');

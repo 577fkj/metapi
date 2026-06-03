@@ -146,6 +146,107 @@ describe('rebuildTokenRoutesFromAvailability', () => {
     expect(channels[0]?.tokenId ?? null).toBeNull();
   });
 
+  it('keeps api key routes for expired accounts when rebuilding routes', async () => {
+    const site = await db.insert(schema.sites).values({
+      name: 'expired-apikey-site',
+      url: 'https://expired-apikey.example.com',
+      platform: 'new-api',
+    }).returning().get();
+
+    const directAccount = await db.insert(schema.accounts).values({
+      siteId: site.id,
+      username: 'expired-direct-user',
+      accessToken: '',
+      apiToken: 'sk-expired-direct',
+      status: 'expired',
+      extraConfig: JSON.stringify({ credentialMode: 'apikey' }),
+    }).returning().get();
+
+    const managedAccount = await db.insert(schema.accounts).values({
+      siteId: site.id,
+      username: 'expired-managed-user',
+      accessToken: 'expired-session-token',
+      apiToken: null,
+      status: 'expired',
+      extraConfig: JSON.stringify({ credentialMode: 'session' }),
+    }).returning().get();
+
+    const managedToken = await db.insert(schema.accountTokens).values({
+      accountId: managedAccount.id,
+      name: 'expired-managed-key',
+      token: 'sk-expired-managed',
+      enabled: true,
+      isDefault: true,
+    }).returning().get();
+
+    await db.insert(schema.modelAvailability).values({
+      accountId: directAccount.id,
+      modelName: 'gpt-expired-direct',
+      available: true,
+      latencyMs: 120,
+      checkedAt: '2026-04-08T08:00:00.000Z',
+    }).run();
+
+    await db.insert(schema.tokenModelAvailability).values({
+      tokenId: managedToken.id,
+      modelName: 'gpt-expired-managed',
+      available: true,
+      latencyMs: 140,
+      checkedAt: '2026-04-08T08:00:00.000Z',
+    }).run();
+
+    const directRoute = await db.insert(schema.tokenRoutes).values({
+      modelPattern: 'gpt-expired-direct',
+      enabled: true,
+    }).returning().get();
+    await db.insert(schema.routeChannels).values({
+      routeId: directRoute.id,
+      accountId: directAccount.id,
+      tokenId: null,
+      priority: 0,
+      weight: 10,
+      enabled: true,
+      manualOverride: false,
+    }).run();
+
+    const managedRoute = await db.insert(schema.tokenRoutes).values({
+      modelPattern: 'gpt-expired-managed',
+      enabled: true,
+    }).returning().get();
+    await db.insert(schema.routeChannels).values({
+      routeId: managedRoute.id,
+      accountId: managedAccount.id,
+      tokenId: managedToken.id,
+      priority: 0,
+      weight: 10,
+      enabled: true,
+      manualOverride: false,
+    }).run();
+
+    const rebuild = await rebuildTokenRoutesFromAvailability();
+
+    expect(rebuild.models).toBe(2);
+    expect(await db.select().from(schema.tokenRoutes).where(eq(schema.tokenRoutes.id, directRoute.id)).get()).toBeDefined();
+    expect(await db.select().from(schema.tokenRoutes).where(eq(schema.tokenRoutes.id, managedRoute.id)).get()).toBeDefined();
+
+    const directChannels = await db.select().from(schema.routeChannels)
+      .where(and(
+        eq(schema.routeChannels.routeId, directRoute.id),
+        eq(schema.routeChannels.accountId, directAccount.id),
+      ))
+      .all();
+    expect(directChannels).toHaveLength(1);
+    expect(directChannels[0]?.tokenId ?? null).toBeNull();
+
+    const managedChannels = await db.select().from(schema.routeChannels)
+      .where(and(
+        eq(schema.routeChannels.routeId, managedRoute.id),
+        eq(schema.routeChannels.tokenId, managedToken.id),
+      ))
+      .all();
+    expect(managedChannels).toHaveLength(1);
+  });
+
   it('creates an exact route with an account-direct channel for oauth model availability', async () => {
     const site = await db.insert(schema.sites).values({
       name: 'codex-site',

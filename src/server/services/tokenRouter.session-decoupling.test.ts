@@ -95,7 +95,7 @@ describe('TokenRouter session decoupling', () => {
     expect(candidate?.reason).not.toContain('账号状态=expired');
   });
 
-  it('still blocks fallback account-token channels when account session is expired', async () => {
+  it('keeps account api-token fallback channels routable when account session is expired', async () => {
     const site = await db.insert(schema.sites).values({
       name: 'legacy-site',
       url: 'https://legacy.example.com',
@@ -128,9 +128,62 @@ describe('TokenRouter session decoupling', () => {
 
     const router = new TokenRouter();
     const selected = await router.selectChannel('gpt-4.1-mini');
-    expect(selected).toBeNull();
+    expect(selected).not.toBeNull();
+    expect(selected?.channel.id).toBe(channel.id);
+    expect(selected?.tokenValue).toBe('sk-fallback-account-token');
 
     const decision = await router.explainSelection('gpt-4.1-mini');
+    const candidate = decision.candidates.find((item) => item.channelId === channel.id);
+    expect(candidate?.eligible).toBe(true);
+    expect(candidate?.reason).not.toContain('账号状态=expired');
+  });
+
+  it('blocks expired session channels without an account api token', async () => {
+    const site = await db.insert(schema.sites).values({
+      name: 'oauth-site',
+      url: 'https://oauth.example.com',
+      platform: 'codex',
+      status: 'active',
+    }).returning().get();
+
+    const account = await db.insert(schema.accounts).values({
+      siteId: site.id,
+      username: 'oauth-user@example.com',
+      accessToken: 'expired-session-token',
+      apiToken: null,
+      status: 'expired',
+      oauthProvider: 'codex',
+      oauthAccountKey: 'oauth-expired-user',
+      extraConfig: JSON.stringify({
+        credentialMode: 'session',
+        oauth: {
+          provider: 'codex',
+          accountId: 'oauth-expired-user',
+          email: 'oauth-user@example.com',
+        },
+      }),
+    }).returning().get();
+
+    const route = await db.insert(schema.tokenRoutes).values({
+      modelPattern: 'gpt-5-mini',
+      enabled: true,
+    }).returning().get();
+
+    const channel = await db.insert(schema.routeChannels).values({
+      routeId: route.id,
+      accountId: account.id,
+      tokenId: null,
+      priority: 0,
+      weight: 10,
+      enabled: true,
+      manualOverride: false,
+    }).returning().get();
+
+    const router = new TokenRouter();
+    const selected = await router.selectChannel('gpt-5-mini');
+    expect(selected).toBeNull();
+
+    const decision = await router.explainSelection('gpt-5-mini');
     const candidate = decision.candidates.find((item) => item.channelId === channel.id);
     expect(candidate?.eligible).toBe(false);
     expect(candidate?.reason).toContain('账号状态=expired');

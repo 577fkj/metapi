@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { getInsertedRowId } from '../db/insertHelpers.js';
 import { getAdapter } from './platforms/index.js';
@@ -35,6 +35,7 @@ import {
   validateGeminiCliOauthConnection,
 } from './platformDiscoveryRegistry.js';
 import { probeRuntimeModel, type RuntimeModelProbeStatus } from './runtimeModelProbe.js';
+import { ACCOUNT_API_KEY_ROUTE_STATUSES } from './accountLifecycleStatus.js';
 
 const API_TOKEN_DISCOVERY_TIMEOUT_MS = 8_000;
 const MODEL_DISCOVERY_TIMEOUT_MS = 12_000;
@@ -1317,7 +1318,7 @@ export async function rebuildTokenRoutesFromAvailability() {
         eq(schema.tokenModelAvailability.available, true),
         eq(schema.accountTokens.enabled, true),
         eq(schema.accountTokens.valueStatus, ACCOUNT_TOKEN_VALUE_STATUS_READY),
-        eq(schema.accounts.status, 'active'),
+        inArray(schema.accounts.status, ACCOUNT_API_KEY_ROUTE_STATUSES),
         eq(schema.sites.status, 'active'),
       ),
     )
@@ -1333,7 +1334,7 @@ export async function rebuildTokenRoutesFromAvailability() {
     .where(
       and(
         eq(schema.modelAvailability.available, true),
-        eq(schema.accounts.status, 'active'),
+        inArray(schema.accounts.status, ACCOUNT_API_KEY_ROUTE_STATUSES),
         eq(schema.sites.status, 'active'),
       ),
     )
