@@ -23,6 +23,7 @@ import {
   getTesterForcedChannelId,
   selectProxyChannelForAttempt,
 } from '../../proxy-core/channelSelection.js';
+import { getProxyUpstreamFailureClientStatus } from '../../proxy-core/upstreamFailureResponse.js';
 const DEFAULT_SEARCH_MODEL = '__search';
 const DEFAULT_MAX_RESULTS = 10;
 const MAX_MAX_RESULTS = 20;
@@ -203,7 +204,7 @@ export async function searchProxyRoute(app: FastifyInstance) {
           model: requestedModel,
           reason: errorText || 'network failure',
         });
-        return reply.code(status || 502).send({
+        return reply.code(getProxyUpstreamFailureClientStatus()).send({
           error: {
             message: status > 0 ? errorText : `Upstream error: ${errorText}`,
             type: 'upstream_error',

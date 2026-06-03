@@ -422,7 +422,7 @@ describe('/v1/videos routes', () => {
       url: '/v1/videos/vid_local_retry_get',
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/plain');
     expect(response.body).toBe('temporary unavailable');
   });
@@ -479,7 +479,7 @@ describe('/v1/videos routes', () => {
       url: '/v1/videos/vid_local_retry_delete',
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/plain');
     expect(response.body).toBe('temporary unavailable');
   });

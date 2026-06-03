@@ -61,6 +61,7 @@ import {
   canRetryChannelSelection,
   getTesterForcedChannelId,
 } from '../channelSelection.js';
+import { getProxyUpstreamFailureClientStatus } from '../upstreamFailureResponse.js';
 const GEMINI_MODEL_PROBES = [
   'gemini-2.5-flash',
   'gemini-2.0-flash',
@@ -81,6 +82,10 @@ const EMPTY_PROXY_USAGE = {
   completionTokens: 0,
   totalTokens: 0,
 };
+
+function getGeminiFailureClientStatus(fromUpstream: boolean, status: number): number {
+  return fromUpstream ? getProxyUpstreamFailureClientStatus() : status;
+}
 
 function isGeminiCliPlatform(platform: unknown): boolean {
   return String(platform || '').trim().toLowerCase() === 'gemini-cli';
@@ -357,6 +362,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
     let lastStatus = 503;
     let lastText = 'No available channels for Gemini models';
     let lastContentType = 'application/json';
+    let lastFailureFromUpstream = false;
 
     while (retryCount <= getProxyMaxChannelRetries()) {
       const selected = forcedChannelId !== null
@@ -368,7 +374,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           : await selectNextGeminiProbeChannel(request, excludeChannelIds));
       if (!selected) {
         await finalizeDebugFailure(lastStatus, lastText, null);
-        return reply.code(lastStatus).type(lastContentType).send(lastText);
+        return reply.code(getGeminiFailureClientStatus(lastFailureFromUpstream, lastStatus)).type(lastContentType).send(lastText);
       }
 
       excludeChannelIds.push(selected.channel.id);
@@ -442,6 +448,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           lastStatus = upstream.status;
           lastText = text;
           lastContentType = upstream.headers.get('content-type') || 'application/json';
+          lastFailureFromUpstream = true;
           await tokenRouter.recordFailure?.(selected.channel.id, {
             status: upstream.status,
             errorText: text,
@@ -451,7 +458,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
             continue;
           }
           await finalizeDebugFailure(lastStatus, parseSurfaceProxyDebugTextPayload(lastText), upstreamPath);
-          return reply.code(lastStatus).type(lastContentType).send(lastText);
+          return reply.code(getProxyUpstreamFailureClientStatus()).type(lastContentType).send(lastText);
         }
 
         try {
@@ -469,6 +476,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
         });
         lastStatus = 502;
         lastContentType = 'application/json';
+        lastFailureFromUpstream = true;
         lastText = JSON.stringify({
           error: {
             message: error instanceof Error ? error.message : 'Gemini upstream request failed',
@@ -480,7 +488,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           continue;
         }
         await finalizeDebugFailure(lastStatus, parseSurfaceProxyDebugTextPayload(lastText), null);
-        return reply.code(lastStatus).type(lastContentType).send(lastText);
+        return reply.code(getProxyUpstreamFailureClientStatus()).type(lastContentType).send(lastText);
       }
     }
   };
@@ -571,6 +579,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
     let lastStatus = 503;
     let lastText = 'No available channels for this model';
     let lastContentType = 'application/json';
+    let lastFailureFromUpstream = false;
 
     while (retryCount <= getProxyMaxChannelRetries()) {
       const selected = forcedChannelId !== null
@@ -584,6 +593,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
         if (forcedChannelId !== null) {
           lastStatus = 503;
           lastContentType = 'application/json';
+          lastFailureFromUpstream = false;
           lastText = JSON.stringify({
             error: {
               message: buildForcedChannelUnavailableMessage(forcedChannelId),
@@ -592,7 +602,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           });
         }
         await finalizeDebugFailure(lastStatus, parseSurfaceProxyDebugTextPayload(lastText), null);
-        return reply.code(lastStatus).type(lastContentType).send(lastText);
+        return reply.code(getGeminiFailureClientStatus(lastFailureFromUpstream, lastStatus)).type(lastContentType).send(lastText);
       }
 
       excludeChannelIds.push(selected.channel.id);
@@ -634,6 +644,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           if (isGeminiCli && !oauth?.projectId) {
             lastStatus = 500;
             lastContentType = 'application/json';
+            lastFailureFromUpstream = false;
             lastText = JSON.stringify({
               error: {
                 message: 'Gemini CLI OAuth project is missing',
@@ -784,6 +795,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           if (!upstream.ok) {
             lastStatus = upstream.status;
             lastContentType = contentType;
+            lastFailureFromUpstream = true;
             lastText = await readRuntimeResponseText(upstream);
             await safeInsertSurfaceProxyDebugAttempt(debugTrace, {
               attemptIndex: retryCount,
@@ -830,10 +842,10 @@ export async function geminiProxyRoute(app: FastifyInstance) {
 
             try {
               await finalizeDebugFailure(lastStatus, JSON.parse(lastText), upstreamPath);
-              return reply.code(lastStatus).send(JSON.parse(lastText));
+              return reply.code(getProxyUpstreamFailureClientStatus()).send(JSON.parse(lastText));
             } catch {
               await finalizeDebugFailure(lastStatus, lastText, upstreamPath);
-              return reply.code(lastStatus).type(lastContentType).send(lastText);
+              return reply.code(getProxyUpstreamFailureClientStatus()).type(lastContentType).send(lastText);
             }
           }
 
@@ -1152,6 +1164,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
         if (isCountTokensAction) {
           lastStatus = 501;
           lastContentType = 'application/json';
+          lastFailureFromUpstream = false;
           lastText = JSON.stringify({
             error: {
               message: 'Gemini countTokens compatibility is not implemented for this upstream',
@@ -1343,6 +1356,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
         if (!endpointResult.ok) {
           lastStatus = endpointResult.status;
           lastContentType = 'application/json';
+          lastFailureFromUpstream = true;
           lastText = JSON.stringify({
             error: {
               message: endpointResult.errText,
@@ -1377,7 +1391,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           await finalizeDebugFailure(lastStatus, JSON.parse(lastText), null).catch(async () => {
             await finalizeDebugFailure(lastStatus, parseSurfaceProxyDebugTextPayload(lastText), null);
           });
-          return reply.code(lastStatus).type(lastContentType).send(lastText);
+          return reply.code(getProxyUpstreamFailureClientStatus()).type(lastContentType).send(lastText);
         }
 
         upstreamPath = endpointResult.upstreamPath;
@@ -1438,6 +1452,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
       } catch (error) {
         lastStatus = 502;
         lastContentType = 'application/json';
+        lastFailureFromUpstream = true;
         lastText = JSON.stringify({
           error: {
             message: error instanceof Error ? error.message : 'Gemini upstream request failed',
@@ -1469,7 +1484,7 @@ export async function geminiProxyRoute(app: FastifyInstance) {
           continue;
         }
         await finalizeDebugFailure(lastStatus, parseSurfaceProxyDebugTextPayload(lastText), upstreamPath || null);
-        return reply.code(lastStatus).type(lastContentType).send(lastText);
+        return reply.code(getProxyUpstreamFailureClientStatus()).type(lastContentType).send(lastText);
       }
     }
   };

@@ -85,6 +85,7 @@ import {
   canRetryChannelSelection,
   getTesterForcedChannelId,
 } from '../channelSelection.js';
+import { getProxyUpstreamFailureClientStatus } from '../upstreamFailureResponse.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -97,7 +98,8 @@ function asTrimmedString(value: unknown): string {
 function finalizeRetryAsUpstreamFailure(status: number, message: string) {
   return {
     action: 'respond' as const,
-    status,
+    status: getProxyUpstreamFailureClientStatus(),
+    upstreamStatus: status,
     payload: {
       error: {
         message,
@@ -110,7 +112,8 @@ function finalizeRetryAsUpstreamFailure(status: number, message: string) {
 function finalizeRetryAsExecutionFailure(message: string) {
   return {
     action: 'respond' as const,
-    status: 502,
+    status: getProxyUpstreamFailureClientStatus(),
+    upstreamStatus: 502,
     payload: {
       error: {
         message: `Upstream error: ${message}`,
@@ -674,7 +677,7 @@ export async function handleChatSurfaceRequest(
                 },
               }, successfulUpstreamPath);
               if (!streamStarted) {
-                return reply.code(502).send({
+                return reply.code(getProxyUpstreamFailureClientStatus()).send({
                   error: {
                     message: streamResult.errorMessage,
                     type: 'upstream_error',
@@ -741,7 +744,7 @@ export async function handleChatSurfaceRequest(
               continue;
             }
             await finalizeDebugFailure(
-              terminalFailureOutcome.status,
+              terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
               terminalFailureOutcome.payload,
               successfulUpstreamPath,
             );
@@ -774,7 +777,7 @@ export async function handleChatSurfaceRequest(
               },
             }, successfulUpstreamPath);
             if (!streamStarted) {
-              return reply.code(502).send({
+              return reply.code(getProxyUpstreamFailureClientStatus()).send({
                 error: {
                   message: streamResult.errorMessage,
                   type: 'upstream_error',
@@ -852,7 +855,7 @@ export async function handleChatSurfaceRequest(
               },
             }, successfulUpstreamPath);
             if (!streamStarted) {
-              return reply.code(502).send({
+              return reply.code(getProxyUpstreamFailureClientStatus()).send({
                 error: {
                   message: streamResult.errorMessage,
                   type: 'upstream_error',
@@ -943,7 +946,7 @@ export async function handleChatSurfaceRequest(
           continue;
         }
         await finalizeDebugFailure(
-          terminalFailureOutcome.status,
+          terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
           terminalFailureOutcome.payload,
           successfulUpstreamPath,
         );
@@ -1035,7 +1038,7 @@ export async function handleChatSurfaceRequest(
           continue;
         }
         await finalizeDebugFailure(
-          terminalFailureOutcome.status,
+          terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
           terminalFailureOutcome.payload,
           null,
         );
@@ -1060,7 +1063,7 @@ export async function handleChatSurfaceRequest(
         continue;
       }
       await finalizeDebugFailure(
-        terminalFailureOutcome.status,
+        terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
         terminalFailureOutcome.payload,
         null,
       );
@@ -1482,7 +1485,7 @@ export async function handleClaudeCountTokensSurfaceRequest(
           retryCount += 1;
           continue;
         }
-        await finalizeDebugFailure(terminalFailureOutcome.status, terminalFailureOutcome.payload, null);
+        await finalizeDebugFailure(terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status, terminalFailureOutcome.payload, null);
         return reply.code(terminalFailureOutcome.status).send(terminalFailureOutcome.payload);
       }
       const failureOutcome = await failureToolkit.handleExecutionError({
@@ -1503,7 +1506,7 @@ export async function handleClaudeCountTokensSurfaceRequest(
         retryCount += 1;
         continue;
       }
-      await finalizeDebugFailure(terminalFailureOutcome.status, terminalFailureOutcome.payload, null);
+      await finalizeDebugFailure(terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status, terminalFailureOutcome.payload, null);
       return reply.code(terminalFailureOutcome.status).send(terminalFailureOutcome.payload);
     } finally {
       channelLease.release();

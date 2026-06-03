@@ -26,6 +26,7 @@ import {
   getTesterForcedChannelId,
   selectProxyChannelForAttempt,
 } from '../../proxy-core/channelSelection.js';
+import { getProxyUpstreamFailureClientStatus } from '../../proxy-core/upstreamFailureResponse.js';
 
 export async function embeddingsProxyRoute(app: FastifyInstance) {
   app.post('/v1/embeddings', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -203,7 +204,7 @@ export async function embeddingsProxyRoute(app: FastifyInstance) {
           model: requestedModel,
           reason: errorText || 'network failure',
         });
-        return reply.code(status || 502).send({
+        return reply.code(getProxyUpstreamFailureClientStatus()).send({
           error: {
             message: status > 0 ? errorText : `Upstream error: ${errorText}`,
             type: 'upstream_error',

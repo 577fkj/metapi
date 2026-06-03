@@ -339,7 +339,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.json()?.error?.type).toBe('upstream_error');
     expect(response.json()?.error?.message).toContain('empty content');
     expect(recordSuccessMock).not.toHaveBeenCalled();
@@ -375,7 +375,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).not.toContain('text/event-stream');
     expect(response.json()?.error?.type).toBe('upstream_error');
     expect(recordSuccessMock).not.toHaveBeenCalled();
@@ -409,7 +409,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).not.toContain('text/event-stream');
     expect(response.json()?.error?.type).toBe('upstream_error');
     expect(response.json()?.error?.message).toContain('empty content');
@@ -444,7 +444,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).not.toContain('text/event-stream');
     expect(response.json()?.error?.type).toBe('upstream_error');
     expect(response.json()?.error?.message).toContain('empty content');
@@ -479,7 +479,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).not.toContain('text/event-stream');
     expect(response.json()?.error?.type).toBe('upstream_error');
     expect(response.json()?.error?.message).toContain('empty content');
@@ -2181,7 +2181,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.error?.type).toBe('upstream_error');
     expect(body.error?.message).toContain('[upstream:');
@@ -2224,7 +2224,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [firstUrl] = fetchMock.mock.calls[0] as [string, any];
     expect(firstUrl).toContain('/v1/responses');
@@ -2858,7 +2858,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.json()?.error?.type).toBe('upstream_error');
     expect(response.json()?.error?.message).toContain('empty content');
     expect(recordSuccessMock).not.toHaveBeenCalled();
@@ -2891,7 +2891,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).not.toContain('text/event-stream');
     expect(response.json()?.error?.type).toBe('upstream_error');
     expect(recordSuccessMock).not.toHaveBeenCalled();
@@ -3599,7 +3599,7 @@ describe('chat proxy stream behavior', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [firstUrl] = fetchMock.mock.calls[0] as [string, any];
     expect(firstUrl).toContain('/v1/messages');

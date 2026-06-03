@@ -217,7 +217,7 @@ describe('responses proxy compact upstream routing', () => {
       },
     });
 
-    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0] || '')).toContain('/v1/responses/compact');
   });
@@ -423,7 +423,7 @@ describe('responses proxy compact upstream routing', () => {
       },
     });
 
-    expect(response.statusCode).toBe(422);
+    expect(response.statusCode).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0] || '')).toContain('/v1/responses/compact');
   });
@@ -720,7 +720,7 @@ describe('responses proxy compact upstream routing', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(fetchMock.mock.calls.length).toBeGreaterThan(0);
     for (const [targetUrl] of fetchMock.mock.calls as Array<[string, any]>) {
       expect(String(targetUrl)).toContain('/v1/responses/compact');
@@ -749,7 +749,7 @@ describe('responses proxy compact upstream routing', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(fetchMock.mock.calls.length).toBeGreaterThan(0);
     for (const [targetUrl] of fetchMock.mock.calls as Array<[string, any]>) {
       expect(String(targetUrl)).toContain('/v1/responses/compact');

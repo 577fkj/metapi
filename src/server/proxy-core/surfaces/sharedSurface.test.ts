@@ -584,7 +584,8 @@ describe('selectSurfaceChannelForAttempt', () => {
 
     expect(result).toEqual({
       action: 'respond',
-      status: 401,
+      status: 200,
+      upstreamStatus: 401,
       payload: {
         error: {
           message: 'expired token',
@@ -638,7 +639,8 @@ describe('selectSurfaceChannelForAttempt', () => {
       retryCount: 2,
     })).resolves.toEqual({
       action: 'respond',
-      status: 401,
+      status: 200,
+      upstreamStatus: 401,
       payload: {
         error: {
           message: 'expired token',
@@ -686,7 +688,8 @@ describe('selectSurfaceChannelForAttempt', () => {
 
     expect(result).toEqual({
       action: 'respond',
-      status: 500,
+      status: 200,
+      upstreamStatus: 500,
       payload: {
         error: {
           message: 'upstream failure',
@@ -706,7 +709,7 @@ describe('selectSurfaceChannelForAttempt', () => {
     expect(recordOauthQuotaResetHintMock).not.toHaveBeenCalled();
   });
 
-  it('returns a terminal 502 for exhausted network failures through the shared failure toolkit', async () => {
+  it('returns a masked client status for exhausted network failures through the shared failure toolkit', async () => {
     composeProxyLogMessageMock.mockReturnValue('normalized error');
     formatUtcSqlDateTimeMock.mockReturnValue('2026-03-21 22:00:00');
     insertProxyLogMock.mockResolvedValue(undefined);
@@ -736,7 +739,8 @@ describe('selectSurfaceChannelForAttempt', () => {
 
     expect(result).toEqual({
       action: 'respond',
-      status: 502,
+      status: 200,
+      upstreamStatus: 502,
       payload: {
         error: {
           message: 'Upstream error: socket hang up',

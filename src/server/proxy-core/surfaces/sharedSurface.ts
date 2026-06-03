@@ -19,6 +19,7 @@ import { refreshOauthAccessTokenSingleflight } from '../../services/oauth/refres
 import { proxyChannelCoordinator } from '../../services/proxyChannelCoordinator.js';
 import { readRuntimeResponseText } from '../executors/types.js';
 import { selectProxyChannelForAttempt } from '../channelSelection.js';
+import { getProxyUpstreamFailureClientStatus } from '../upstreamFailureResponse.js';
 
 type SelectedChannel = Awaited<ReturnType<typeof tokenRouter.selectChannel>>;
 type SurfaceWarningScope = 'chat' | 'responses';
@@ -33,6 +34,7 @@ type SurfaceSelectedChannel = {
 type SurfaceFailureResponse = {
   action: 'respond';
   status: number;
+  upstreamStatus?: number;
   payload: {
     error: {
       message: string;
@@ -587,7 +589,8 @@ export function createSurfaceFailureToolkit(input: {
 
       return {
         action: 'respond',
-        status: args.status,
+        status: getProxyUpstreamFailureClientStatus(),
+        upstreamStatus: args.status,
         payload: {
           error: {
             message: args.errText,
@@ -644,7 +647,8 @@ export function createSurfaceFailureToolkit(input: {
 
       return {
         action: 'respond',
-        status: args.failure.status,
+        status: getProxyUpstreamFailureClientStatus(),
+        upstreamStatus: args.failure.status,
         payload: {
           error: {
             message: args.failure.reason,
@@ -690,7 +694,8 @@ export function createSurfaceFailureToolkit(input: {
 
       return {
         action: 'respond',
-        status: 502,
+        status: getProxyUpstreamFailureClientStatus(),
+        upstreamStatus: 502,
         payload: {
           error: {
             message: `Upstream error: ${args.errorMessage || 'network failure'}`,

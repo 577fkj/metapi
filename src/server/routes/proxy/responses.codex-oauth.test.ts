@@ -420,7 +420,7 @@ describe('responses proxy codex oauth refresh', () => {
       },
     });
 
-    expect(response.statusCode).toBe(403);
+    expect(response.statusCode).toBe(200);
     expect(refreshOauthAccessTokenSingleflightMock).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.json()).toMatchObject({
@@ -1269,7 +1269,7 @@ describe('responses proxy codex oauth refresh', () => {
       },
     });
 
-    expect(response.statusCode).toBe(429);
+    expect(response.statusCode).toBe(200);
     expect(recordOauthQuotaResetHintMock).toHaveBeenCalledWith({
       accountId: 33,
       statusCode: 429,
@@ -1447,7 +1447,7 @@ describe('responses proxy codex oauth refresh', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
 
     const [, firstOptions] = fetchMock.mock.calls[0] as [string, any];

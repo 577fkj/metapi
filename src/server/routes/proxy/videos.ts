@@ -25,6 +25,7 @@ import {
   selectProxyChannelForAttempt,
 } from '../../proxy-core/channelSelection.js';
 import { runWithSiteApiEndpointPool, SiteApiEndpointRequestError } from '../../services/siteApiEndpointService.js';
+import { getProxyUpstreamFailureClientStatus } from '../../proxy-core/upstreamFailureResponse.js';
 
 function rewriteVideoResponsePublicId(payload: unknown, publicId: string): unknown {
   if (!payload || typeof payload !== 'object') return payload;
@@ -129,7 +130,7 @@ export async function videosProxyRoute(app: FastifyInstance) {
         try { data = JSON.parse(text); } catch { data = {}; }
         const upstreamVideoId = typeof data?.id === 'string' ? data.id.trim() : '';
         if (!upstreamVideoId) {
-          return reply.code(502).send({
+          return reply.code(getProxyUpstreamFailureClientStatus()).send({
             error: { message: 'Upstream video response did not include id', type: 'upstream_error' },
           });
         }
@@ -187,7 +188,7 @@ export async function videosProxyRoute(app: FastifyInstance) {
           model: requestedModel,
           reason: errorText || 'network failure',
         });
-        return reply.code(status || 502).send({
+        return reply.code(getProxyUpstreamFailureClientStatus()).send({
           error: {
             message: status > 0 ? errorText : `Upstream error: ${errorText}`,
             type: 'upstream_error',
@@ -253,7 +254,7 @@ export async function videosProxyRoute(app: FastifyInstance) {
     }
 
     const text = await upstream.text();
-    return reply.code(upstream.status).send({
+    return reply.code(getProxyUpstreamFailureClientStatus()).send({
       error: { message: text || 'Upstream delete failed', type: 'upstream_error' },
     });
   });
@@ -305,14 +306,14 @@ function sendVideoTaskEndpointFailure(
     ? error.rawErrText
     : (typeof error.message === 'string' ? error.message.trim() : '');
   if (!rawText) {
-    return reply.code(status).send({
+    return reply.code(getProxyUpstreamFailureClientStatus()).send({
       error: { message: 'Upstream request failed', type: 'upstream_error' },
     });
   }
   try {
-    return reply.code(status).send(JSON.parse(rawText));
+    return reply.code(getProxyUpstreamFailureClientStatus()).send(JSON.parse(rawText));
   } catch {
-    return reply.code(status).type('text/plain').send(rawText);
+    return reply.code(getProxyUpstreamFailureClientStatus()).type('text/plain').send(rawText);
   }
 }
 

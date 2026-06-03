@@ -173,7 +173,7 @@ describe('downstream client context route logging', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(dbValuesMock).toHaveBeenCalled();
     const insertedLog = dbValuesMock.mock.calls.at(-1)?.[0];
     expect(insertedLog.errorMessage).toContain('[client:codex]');
@@ -205,7 +205,7 @@ describe('downstream client context route logging', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(dbValuesMock).toHaveBeenCalled();
     const insertedLog = dbValuesMock.mock.calls.at(-1)?.[0];
     expect(insertedLog.errorMessage).toContain('[client:codex]');
@@ -237,7 +237,7 @@ describe('downstream client context route logging', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(dbValuesMock).toHaveBeenCalled();
     const insertedLog = dbValuesMock.mock.calls.at(-1)?.[0];
     expect(insertedLog.errorMessage).toContain('[client:claude_code]');
@@ -273,7 +273,7 @@ describe('downstream client context route logging', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(dbValuesMock).toHaveBeenCalled();
     const insertedLog = dbValuesMock.mock.calls.at(-1)?.[0];
     expect(insertedLog.errorMessage).toContain('[client:claude_code]');
@@ -305,7 +305,7 @@ describe('downstream client context route logging', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
     expect(dbValuesMock).toHaveBeenCalled();
     const insertedLog = dbValuesMock.mock.calls.at(-1)?.[0];
     expect(insertedLog.errorMessage).toContain('[downstream:/v1/messages]');

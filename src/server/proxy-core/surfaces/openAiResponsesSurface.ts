@@ -102,6 +102,7 @@ import {
   canRetryChannelSelection,
   getTesterForcedChannelId,
 } from '../channelSelection.js';
+import { getProxyUpstreamFailureClientStatus } from '../upstreamFailureResponse.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object';
@@ -213,7 +214,8 @@ function carriesResponsesFileUrlInput(value: unknown): boolean {
 function finalizeRetryAsUpstreamFailure(status: number, message: string) {
   return {
     action: 'respond' as const,
-    status,
+    status: getProxyUpstreamFailureClientStatus(),
+    upstreamStatus: status,
     payload: {
       error: {
         message,
@@ -226,7 +228,8 @@ function finalizeRetryAsUpstreamFailure(status: number, message: string) {
 function finalizeRetryAsExecutionFailure(message: string) {
   return {
     action: 'respond' as const,
-    status: 502,
+    status: getProxyUpstreamFailureClientStatus(),
+    upstreamStatus: 502,
     payload: {
       error: {
         message: `Upstream error: ${message}`,
@@ -1035,7 +1038,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
 	                continue;
 	              }
 	              await finalizeDebugFailure(
-	                terminalFailureOutcome.status,
+	                terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
 	                terminalFailureOutcome.payload,
 	                successfulUpstreamPath,
 	              );
@@ -1303,7 +1306,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
 	            continue;
 	          }
 	          await finalizeDebugFailure(
-	            terminalFailureOutcome.status,
+	            terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
 	            terminalFailureOutcome.payload,
 	            successfulUpstreamPath,
 	          );
@@ -1390,7 +1393,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
               continue;
             }
             await finalizeDebugFailure(
-              terminalFailureOutcome.status,
+              terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
               terminalFailureOutcome.payload,
               null,
             );
@@ -1415,7 +1418,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
             continue;
 	        }
 		        await finalizeDebugFailure(
-	            terminalFailureOutcome.status,
+	            terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
 	            terminalFailureOutcome.payload,
 	            null,
 	          );
