@@ -30,6 +30,19 @@ const COOKIE_ONLY_LOGIN_USERNAME = 'cookie-only-user';
 const COOKIE_ONLY_LOGIN_PASSWORD = 'cookie-only-pass';
 const COOKIE_ONLY_LOGIN_SESSION = 'cookie-only-session';
 const OPENAI_MODELS_SHIELDED_TOKEN = 'openai-models-shielded-token';
+const MASKED_UPSTREAM_SESSION = 'masked-token-session';
+const MASKED_DELETE_SESSION = 'masked-delete-session';
+const RANDOM_PLAIN_TOKEN = createHash('sha256')
+  .update('newapi-masked-plain-token-fixture')
+  .digest('hex')
+  .slice(0, 48);
+const RANDOM_MASKED_TOKEN = `${RANDOM_PLAIN_TOKEN.slice(0, 4)}**********${RANDOM_PLAIN_TOKEN.slice(-4)}`;
+const RANDOM_TOKEN_ID = Number.parseInt(
+  createHash('sha256').update('newapi-masked-token-id-fixture').digest('hex').slice(0, 6),
+  16,
+);
+const RANDOM_TOKEN_KEY_PATH = `/api/token/${RANDOM_TOKEN_ID}/key`;
+const RANDOM_TOKEN_DELETE_PATH = `/api/token/${RANDOM_TOKEN_ID}`;
 const COOKIE_SHIELDED_TOKEN = Buffer.from(
   `1771864970|${Buffer.from('username=linuxdo_131936').toString('base64')}|sig`,
 ).toString('base64');
@@ -186,6 +199,55 @@ describe('NewApiAdapter', () => {
       }
 
       if (req.url?.startsWith('/api/token/')) {
+        if (typeof req.headers.authorization === 'string' && req.headers.authorization === `Bearer ${MASKED_UPSTREAM_SESSION}`) {
+          if (req.url === RANDOM_TOKEN_KEY_PATH) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              data: {
+                key: RANDOM_PLAIN_TOKEN,
+              },
+              success: true,
+            }));
+            return;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            data: {
+              items: [{ id: RANDOM_TOKEN_ID, key: RANDOM_MASKED_TOKEN, name: 'masked-token', status: 1 }],
+            },
+            success: true,
+          }));
+          return;
+        }
+
+        if (typeof req.headers.authorization === 'string' && req.headers.authorization === `Bearer ${MASKED_DELETE_SESSION}`) {
+          if (req.url === RANDOM_TOKEN_KEY_PATH) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              data: {
+                key: RANDOM_PLAIN_TOKEN,
+              },
+              success: true,
+            }));
+            return;
+          }
+          if (req.url === RANDOM_TOKEN_DELETE_PATH && req.method === 'DELETE') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true }));
+            return;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            data: {
+              items: [{ id: RANDOM_TOKEN_ID, key: RANDOM_MASKED_TOKEN, name: 'masked-token', status: 1 }],
+            },
+            success: true,
+          }));
+          return;
+        }
+
         if (typeof req.headers.authorization === 'string' && req.headers.authorization === `Bearer ${COOKIE_SHIELDED_TOKEN}`) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, message: 'unauthorized' }));
@@ -565,6 +627,37 @@ describe('NewApiAdapter', () => {
     const token = await adapter.getApiToken(baseUrl, 'session-token', 11494);
 
     expect(token).toBe('api-key-from-token-list');
+  });
+
+  it('fetches plain token key when list response is masked', async () => {
+    const adapter = new NewApiAdapter();
+    const token = await adapter.getApiToken(baseUrl, MASKED_UPSTREAM_SESSION, 11494);
+
+    expect(token).toBe(RANDOM_PLAIN_TOKEN);
+    expect(
+      requests.some((r) => r.url === '/api/token/?p=0&size=100' && r.headers.authorization === `Bearer ${MASKED_UPSTREAM_SESSION}`),
+    ).toBe(true);
+    expect(
+      requests.some((r) => r.url === RANDOM_TOKEN_KEY_PATH && r.headers.authorization === `Bearer ${MASKED_UPSTREAM_SESSION}`),
+    ).toBe(true);
+  });
+
+  it('deletes a masked listed token by resolving its plain key first', async () => {
+    const adapter = new NewApiAdapter();
+    const deleted = await adapter.deleteApiToken(
+      baseUrl,
+      MASKED_DELETE_SESSION,
+      RANDOM_PLAIN_TOKEN,
+      11494,
+    );
+
+    expect(deleted).toBe(true);
+    expect(
+      requests.some((r) => r.url === RANDOM_TOKEN_KEY_PATH && r.headers.authorization === `Bearer ${MASKED_DELETE_SESSION}`),
+    ).toBe(true);
+    expect(
+      requests.some((r) => r.url === RANDOM_TOKEN_DELETE_PATH && r.method === 'DELETE' && r.headers.authorization === `Bearer ${MASKED_DELETE_SESSION}`),
+    ).toBe(true);
   });
 
   it('solves anyrouter acw challenge for account-password login', async () => {

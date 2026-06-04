@@ -329,6 +329,63 @@ export class NewApiAdapter extends BasePlatformAdapter {
     return normalized;
   }
 
+  private isMaskedTokenKey(value?: string | null): boolean {
+    const key = (value || '').trim();
+    return key.includes('*') || key.includes('•');
+  }
+
+  private parseTokenId(value: unknown): number | null {
+    const id = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    return id;
+  }
+
+  private async fetchTokenPlainKey(
+    baseUrl: string,
+    tokenId: number,
+    request: (path: string) => Promise<any>,
+  ): Promise<string | null> {
+    try {
+      const res = await request(`/api/token/${tokenId}/key`);
+      const key = typeof res?.data?.key === 'string'
+        ? res.data.key.trim()
+        : (typeof res?.key === 'string' ? res.key.trim() : '');
+      if (key) return key;
+    } catch {}
+    return null;
+  }
+
+  private async normalizeTokenItemsWithPlainKeys(
+    baseUrl: string,
+    items: any[],
+    request: (path: string) => Promise<any>,
+  ): Promise<ApiTokenInfo[]> {
+    const normalized = this.normalizeTokenItems(items);
+    let normalizedIndex = 0;
+    const refillJobs: Array<Promise<void>> = [];
+
+    for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+      const item = items[itemIndex];
+      const rawKey = typeof item?.key === 'string' ? item.key.trim() : '';
+      if (!rawKey) continue;
+
+      const token = normalized[normalizedIndex];
+      normalizedIndex += 1;
+      if (!token || !this.isMaskedTokenKey(token.key)) continue;
+
+      const tokenId = this.parseTokenId(item?.id);
+      if (!tokenId) continue;
+
+      refillJobs.push((async () => {
+        const plainKey = await this.fetchTokenPlainKey(baseUrl, tokenId, request);
+        if (plainKey) token.key = plainKey;
+      })());
+    }
+
+    await Promise.all(refillJobs);
+    return normalized;
+  }
+
   private parseUserInfo(data: any): UserInfo {
     return {
       username: data?.username || data?.display_name || '',
@@ -814,7 +871,12 @@ export class NewApiAdapter extends BasePlatformAdapter {
         const headers: Record<string, string> = { Cookie: cookie };
         if (userId) headers['New-Api-User'] = String(userId);
         const res = await this.fetchJsonRaw<any>(`${baseUrl}/api/token/?p=0&size=100`, { headers });
-        const normalized = this.normalizeTokenItems(this.parseTokenItems(res));
+        const items = this.parseTokenItems(res);
+        const normalized = await this.normalizeTokenItemsWithPlainKeys(
+          baseUrl,
+          items,
+          (path) => this.fetchJsonRaw<any>(`${baseUrl}${path}`, { headers }),
+        );
         if (normalized.length > 0) return normalized;
       } catch {}
     }
@@ -1365,11 +1427,21 @@ export class NewApiAdapter extends BasePlatformAdapter {
     if (!targetKey) return false;
     const resolvedUserId = platformUserId || await this.discoverUserId(baseUrl, accessToken);
 
-    const pickTokenId = (items: any[]): number | null => {
+    const pickTokenId = async (
+      items: any[],
+      request: (path: string) => Promise<any>,
+    ): Promise<number | null> => {
       for (const item of items) {
-        const key = this.normalizeTokenKeyForCompare(item?.key);
-        const id = Number.parseInt(String(item?.id), 10);
-        if (key && key === targetKey && Number.isFinite(id) && id > 0) {
+        const id = this.parseTokenId(item?.id);
+        if (!id) continue;
+
+        let key = this.normalizeTokenKeyForCompare(item?.key);
+        if (this.isMaskedTokenKey(key)) {
+          const plainKey = await this.fetchTokenPlainKey(baseUrl, id, request);
+          if (plainKey) key = this.normalizeTokenKeyForCompare(plainKey);
+        }
+
+        if (key && key === targetKey) {
           return id;
         }
       }
@@ -1379,14 +1451,12 @@ export class NewApiAdapter extends BasePlatformAdapter {
     let tokenId: number | null = null;
 
     try {
-      const list = await this.fetchJson<any>(`${baseUrl}/api/token/?p=0&size=100`, {
-        headers: this.authHeaders(accessToken, resolvedUserId || undefined),
-      });
-      tokenId = pickTokenId(this.parseTokenItems(list));
+      const headers = this.authHeaders(accessToken, resolvedUserId || undefined);
+      const list = await this.fetchJson<any>(`${baseUrl}/api/token/?p=0&size=100`, { headers });
+      tokenId = await pickTokenId(this.parseTokenItems(list), (path) => this.fetchJson<any>(`${baseUrl}${path}`, { headers }));
       if (tokenId) {
         const res = await this.fetchJson<any>(`${baseUrl}/api/token/${tokenId}`, {
-          method: 'DELETE',
-          headers: this.authHeaders(accessToken, resolvedUserId || undefined),
+          method: 'DELETE', headers,
         });
         return !!res?.success;
       }
@@ -1400,7 +1470,7 @@ export class NewApiAdapter extends BasePlatformAdapter {
       try {
         if (!tokenId) {
           const list = await this.fetchJsonRaw<any>(`${baseUrl}/api/token/?p=0&size=100`, { headers });
-          tokenId = pickTokenId(this.parseTokenItems(list));
+          tokenId = await pickTokenId(this.parseTokenItems(list), (path) => this.fetchJsonRaw<any>(`${baseUrl}${path}`, { headers }));
         }
 
         if (!tokenId) continue;
@@ -1420,10 +1490,14 @@ export class NewApiAdapter extends BasePlatformAdapter {
 
   private async getApiTokensWithUser(baseUrl: string, accessToken: string, userId: number | null): Promise<ApiTokenInfo[]> {
     try {
-      const res = await this.fetchJson<any>(`${baseUrl}/api/token/?p=0&size=100`, {
-        headers: this.authHeaders(accessToken, userId || undefined),
-      });
-      const normalized = this.normalizeTokenItems(this.parseTokenItems(res));
+      const headers = this.authHeaders(accessToken, userId || undefined);
+      const res = await this.fetchJson<any>(`${baseUrl}/api/token/?p=0&size=100`, { headers });
+      const items = this.parseTokenItems(res);
+      const normalized = await this.normalizeTokenItemsWithPlainKeys(
+        baseUrl,
+        items,
+        (path) => this.fetchJson<any>(`${baseUrl}${path}`, { headers }),
+      );
       if (normalized.length > 0) return normalized;
       if (this.isTokenListResponse(res)) return [];
     } catch {}
