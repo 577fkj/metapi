@@ -39,6 +39,7 @@ import {
   canAccountRouteApiKey,
   isAccountSessionActive,
 } from './accountLifecycleStatus.js';
+import { getCredentialModeFromExtraConfig } from './accountExtraConfig.js';
 
 interface RouteMatch {
   route: RouteRow;
@@ -3289,6 +3290,9 @@ export class TokenRouter {
       }
 
       const accessToken = candidate.account.accessToken?.trim();
+      if (getCredentialModeFromExtraConfig(candidate.account.extraConfig) === 'session') {
+        return accessToken ? { value: accessToken, source: 'oauth_access_token' } : null;
+      }
       if (accessToken) return { value: accessToken, source: 'oauth_access_token' };
       return apiToken ? { value: apiToken, source: 'account_api_token' } : null;
     }

@@ -154,6 +154,7 @@ describe('Settings proxy transport', () => {
 
       expect(apiMock.updateRuntimeSettings).toHaveBeenCalledWith({
         codexUpstreamWebsocketEnabled: true,
+        codexQuotaProbeModel: 'gpt-5.4',
         responsesCompactFallbackToResponsesEnabled: true,
         proxySessionChannelConcurrencyLimit: 6,
         proxySessionChannelQueueWaitMs: 4200,
