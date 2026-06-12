@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import { db, schema } from '../db/index.js';
 import { getAdapter } from './platforms/index.js';
 import { eq } from 'drizzle-orm';
@@ -21,6 +22,7 @@ import {
 } from './sub2apiManagedAuth.js';
 import { refreshSub2ApiManagedSessionSingleflight } from './sub2apiRefreshSingleflight.js';
 import { attemptAccountPasswordRelogin } from './accountReloginService.js';
+import { withSiteRateLimit } from './siteRateLimiter.js';
 
 function isSiteDisabled(status?: string | null): boolean {
   return (status || 'active') === 'disabled';
@@ -400,24 +402,34 @@ export async function refreshBalance(accountId: number) {
 }
 
 export async function refreshAllBalances() {
+export async function refreshAllBalances() {
   const rows = await db
     .select()
     .from(schema.accounts)
+    .innerJoin(schema.sites, eq(schema.accounts.siteId, schema.sites.id))
     .where(eq(schema.accounts.status, 'active'))
     .all();
 
   const results: Array<{ accountId: number; balance: number | null }> = [];
 
-  await Promise.all(
-    rows.map(async (account) => {
-      try {
-        const info = await refreshBalance(account.id);
-        results.push({ accountId: account.id, balance: info?.balance ?? null });
-      } catch {
-        results.push({ accountId: account.id, balance: null });
-      }
-    }),
-  );
+  const grouped = new Map<number, typeof rows>();
+  for (const row of rows) {
+    const siteId = row.sites.id;
+    if (!grouped.has(siteId)) grouped.set(siteId, []);
+    grouped.get(siteId)!.push(row);
+  }
 
+  const promises = Array.from(grouped.entries()).map(async ([_, siteRows]) => {
+    for (const row of siteRows) {
+      try {
+        const info = await withSiteRateLimit(row.sites.id, row.accounts.id, () => refreshBalance(row.accounts.id), config.siteRateLimitDelayMs);
+        results.push({ accountId: row.accounts.id, balance: info?.balance ?? null });
+      } catch {
+        results.push({ accountId: row.accounts.id, balance: null });
+      }
+    }
+  });
+
+  await Promise.all(promises);
   return results;
 }

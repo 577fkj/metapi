@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import { db, schema } from '../db/index.js';
 import { getAdapter } from './platforms/index.js';
 import { eq, and } from 'drizzle-orm';
@@ -17,6 +18,7 @@ import { setAccountRuntimeHealth } from './accountHealthService.js';
 import { formatUtcSqlDateTime } from './localTimeService.js';
 import { withAccountProxyOverride } from './siteProxy.js';
 import { attemptAccountPasswordRelogin } from './accountReloginService.js';
+import { withSiteRateLimit } from './siteRateLimiter.js';
 
 type CheckinExecutionStatus = 'success' | 'failed' | 'skipped';
 
@@ -322,10 +324,10 @@ export async function checkinAll(options?: { accountIds?: number[]; scheduleMode
 
   const promises = Array.from(grouped.entries()).map(async ([_, siteRows]) => {
     for (const row of siteRows) {
-      const r = await checkinAccount(row.accounts.id, {
+      const r = await withSiteRateLimit(row.sites.id, row.accounts.id, () => checkinAccount(row.accounts.id, {
         skipEvent: true,
         scheduleMode: options?.scheduleMode,
-      });
+      }), config.siteRateLimitDelayMs);
       results.push({
         accountId: row.accounts.id,
         username: row.accounts.username,

@@ -18,6 +18,7 @@ import {
   supportsDirectAccountRoutingConnection,
 } from './accountExtraConfig.js';
 import { invalidateTokenRouterCache } from './tokenRouter.js';
+import { withSiteRateLimit } from './siteRateLimiter.js';
 import { getBlockedBrandRules, isModelBlockedByBrand } from './brandMatcher.js';
 import { config } from '../config.js';
 import { setAccountRuntimeHealth } from './accountHealthService.js';
@@ -1295,17 +1296,31 @@ export async function refreshModelsForAccount(
 }
 
 async function refreshModelsForAllActiveAccounts(): Promise<ModelRefreshResult[]> {
-  const accounts = await db.select({ id: schema.accounts.id }).from(schema.accounts)
+  const accounts = await db.select()
+    .from(schema.accounts)
+    .innerJoin(schema.sites, eq(schema.accounts.siteId, schema.sites.id))
     .where(eq(schema.accounts.status, 'active'))
     .all();
 
   const results: ModelRefreshResult[] = [];
-  for (let offset = 0; offset < accounts.length; offset += MODEL_REFRESH_BATCH_SIZE) {
-    const batch = accounts.slice(offset, offset + MODEL_REFRESH_BATCH_SIZE);
-    const batchResults = await Promise.all(batch.map(async (account) => refreshModelsForAccount(account.id)));
-    results.push(...batchResults);
+
+  const grouped = new Map<number, typeof accounts>();
+  for (const row of accounts) {
+    const siteId = row.sites.id;
+    if (!grouped.has(siteId)) grouped.set(siteId, []);
+    grouped.get(siteId)!.push(row);
   }
+
+  const promises = Array.from(grouped.entries()).map(async ([_, siteRows]) => {
+    for (const row of siteRows) {
+      const result = await withSiteRateLimit(row.sites.id, row.accounts.id, () => refreshModelsForAccount(row.accounts.id), config.siteRateLimitDelayMs);
+      results.push(result);
+    }
+  });
+
+  await Promise.all(promises);
   return results;
+}
 }
 
 export async function rebuildTokenRoutesFromAvailability() {
