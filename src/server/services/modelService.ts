@@ -668,12 +668,12 @@ export async function refreshModelsForAccount(
     await clearExistingAvailability();
     if (previousModelAvailability.length > 0) {
       await db.insert(schema.modelAvailability).values(
-        previousModelAvailability.map(({ id: _id, ...row }) => row),
+        previousModelAvailability.map((row) => { const { id, ...rest } = row; return rest; }),
       ).run();
     }
     if (previousTokenModelAvailability.length > 0) {
       await db.insert(schema.tokenModelAvailability).values(
-        previousTokenModelAvailability.map(({ id: _id, ...row }) => row),
+        previousTokenModelAvailability.map((row) => { const { id, ...rest } = row; return rest; }),
       ).run();
     }
   };
