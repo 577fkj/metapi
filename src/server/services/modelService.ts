@@ -1321,7 +1321,6 @@ async function refreshModelsForAllActiveAccounts(): Promise<ModelRefreshResult[]
   await Promise.all(promises);
   return results;
 }
-}
 
 export async function rebuildTokenRoutesFromAvailability() {
   const tokenRows = await db.select().from(schema.tokenModelAvailability)

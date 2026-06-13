@@ -402,7 +402,6 @@ export async function refreshBalance(accountId: number) {
 }
 
 export async function refreshAllBalances() {
-export async function refreshAllBalances() {
   const rows = await db
     .select()
     .from(schema.accounts)
