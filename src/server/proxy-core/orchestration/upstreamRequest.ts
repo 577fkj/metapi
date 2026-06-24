@@ -8,6 +8,64 @@ function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function asErrorRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function extractErrorCauseChain(error: unknown): Record<string, unknown>[] {
+  const chain: Record<string, unknown>[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  while (isRecord(current) && !seen.has(current)) {
+    seen.add(current);
+    chain.push(current);
+    current = current.cause;
+  }
+
+  return chain;
+}
+
+function getErrorStringField(error: Record<string, unknown>, field: string): string {
+  const value = error[field];
+  return typeof value === 'string' ? collapseWhitespace(value) : '';
+}
+
+export function summarizeUpstreamExecutionError(error: unknown): string {
+  const chain = extractErrorCauseChain(error);
+  const root = chain[0] || asErrorRecord(error);
+  const message = root
+    ? getErrorStringField(root, 'message')
+    : (typeof error === 'string' ? collapseWhitespace(error) : '');
+  const name = root ? getErrorStringField(root, 'name') : '';
+  const cause = chain.length > 1 ? chain[1] : null;
+  const causeMessage = cause ? getErrorStringField(cause, 'message') : '';
+  const causeName = cause ? getErrorStringField(cause, 'name') : '';
+  const code = chain.map((item) => getErrorStringField(item, 'code')).find(Boolean) || '';
+  const socketCode = chain.map((item) => getErrorStringField(item, 'socketCode')).find(Boolean) || '';
+  const detailParts: string[] = [];
+
+  if (code) detailParts.push(`code=${code}`);
+  if (socketCode && socketCode !== code) detailParts.push(`socketCode=${socketCode}`);
+  if (causeName && causeName !== name) detailParts.push(`cause=${causeName}`);
+  if (causeMessage && causeMessage !== message) detailParts.push(`causeMessage=${causeMessage}`);
+
+  const combined = [message, causeMessage, code, socketCode].join(' ').toLowerCase();
+  const isBodyTerminated = message.toLowerCase() === 'terminated' || /\bterminated\b/.test(combined);
+  const isConnectionReset = /\beconnreset\b|connection reset|socket hang up/.test(combined);
+  const isContentLengthMismatch = /\bund_err_res_content_length_mismatch\b|content length mismatch/.test(combined);
+  const isSocketError = name === 'SocketError' || causeName === 'SocketError';
+
+  let prefix = message || name || 'network failure';
+  if (isBodyTerminated || isConnectionReset || isContentLengthMismatch || isSocketError) {
+    prefix = 'upstream connection closed while reading response body';
+  }
+
+  return detailParts.length > 0
+    ? `${prefix} (${detailParts.join(', ')})`
+    : prefix;
+}
+
 function extractJsonErrorMessage(rawText: string): string {
   try {
     const parsed = JSON.parse(rawText) as unknown;

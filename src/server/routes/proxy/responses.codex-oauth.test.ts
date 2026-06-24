@@ -27,6 +27,7 @@ const originalProxyEmptyContentFailEnabled = config.proxyEmptyContentFailEnabled
 const originalProxyStickySessionEnabled = config.proxyStickySessionEnabled;
 const originalProxySessionChannelConcurrencyLimit = config.proxySessionChannelConcurrencyLimit;
 const originalProxySessionChannelQueueWaitMs = config.proxySessionChannelQueueWaitMs;
+const originalProxyMaxChannelAttempts = config.proxyMaxChannelAttempts;
 const dbInsertMock = vi.fn((_arg?: any) => ({
   values: (values: Record<string, unknown>) => {
     insertedProxyLogs.push(values);
@@ -190,6 +191,7 @@ describe('responses proxy codex oauth refresh', () => {
     config.proxyStickySessionEnabled = originalProxyStickySessionEnabled;
     config.proxySessionChannelConcurrencyLimit = originalProxySessionChannelConcurrencyLimit;
     config.proxySessionChannelQueueWaitMs = originalProxySessionChannelQueueWaitMs;
+    config.proxyMaxChannelAttempts = originalProxyMaxChannelAttempts;
     (config as any).openAiServiceTierRules = undefined;
     fetchMock.mockReset();
     selectChannelMock.mockReset();
@@ -242,6 +244,7 @@ describe('responses proxy codex oauth refresh', () => {
     config.proxyStickySessionEnabled = originalProxyStickySessionEnabled;
     config.proxySessionChannelConcurrencyLimit = originalProxySessionChannelConcurrencyLimit;
     config.proxySessionChannelQueueWaitMs = originalProxySessionChannelQueueWaitMs;
+    config.proxyMaxChannelAttempts = originalProxyMaxChannelAttempts;
     if (app) {
       await app.close();
     }
@@ -1749,5 +1752,52 @@ describe('responses proxy codex oauth refresh', () => {
     });
     expect(String(insertedProxyLogs.at(-1)?.errorMessage || '')).toContain('[upstream:/responses]');
     expect(String(insertedProxyLogs.at(-1)?.errorMessage || '')).toContain('upstream stream aborted after first chunk');
+  });
+
+  it('summarizes undici terminated responses stream reads before the first chunk', async () => {
+    config.proxyMaxChannelAttempts = 1;
+    const terminatedError = Object.assign(new TypeError('terminated'), {
+      cause: Object.assign(new Error('other side closed'), {
+        name: 'SocketError',
+        code: 'UND_ERR_SOCKET',
+        socketCode: 'ECONNRESET',
+      }),
+    });
+    fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(terminatedError);
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+    }));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      payload: {
+        model: 'gpt-5.4',
+        input: 'hello codex',
+        stream: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      error: {
+        type: 'upstream_error',
+      },
+    });
+    expect(response.body).toContain('upstream connection closed while reading response body');
+    expect(response.body).toContain('code=UND_ERR_SOCKET');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(recordSuccessMock).not.toHaveBeenCalled();
+    expect(recordFailureMock).toHaveBeenCalledTimes(1);
+    expect(insertedProxyLogs.at(-1)).toMatchObject({
+      status: 'failed',
+      httpStatus: 502,
+    });
+    expect(String(insertedProxyLogs.at(-1)?.errorMessage || '')).toContain('[upstream:/responses]');
+    expect(String(insertedProxyLogs.at(-1)?.errorMessage || '')).toContain('upstream connection closed while reading response body');
   });
 });

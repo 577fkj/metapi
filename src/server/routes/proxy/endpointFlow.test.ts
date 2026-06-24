@@ -228,6 +228,42 @@ describe('executeEndpointFlow', () => {
     expect(onAttemptSuccess.mock.calls[0]?.[0]?.request?.path).toBe('/v1/chat/completions');
   });
 
+  it('turns first-byte read exceptions into upstream attempt failures', async () => {
+    const terminatedError = Object.assign(new TypeError('terminated'), {
+      cause: Object.assign(new Error('other side closed'), {
+        name: 'SocketError',
+        code: 'UND_ERR_SOCKET',
+        socketCode: 'ECONNRESET',
+      }),
+    });
+    fetchMock.mockResolvedValueOnce(toUndiciResponse(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(terminatedError);
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+    })));
+    const onAttemptFailure = vi.fn();
+
+    const result = await executeEndpointFlow({
+      siteUrl: 'https://example.com',
+      endpointCandidates: ['responses'],
+      buildRequest: () => requestFor('/v1/responses'),
+      onAttemptFailure,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(502);
+      expect(result.errText).toContain('[upstream:/v1/responses]');
+      expect(result.errText).toContain('upstream connection closed while reading response body');
+      expect(result.rawErrText).toContain('code=UND_ERR_SOCKET');
+    }
+    expect(onAttemptFailure).toHaveBeenCalledTimes(1);
+    expect(onAttemptFailure.mock.calls[0]?.[0]?.response?.status).toBe(502);
+  });
+
   it('stops same-site endpoint fallback when the failure is classified as a site outage', async () => {
     fetchMock
       .mockResolvedValueOnce(toUndiciResponse(new Response(JSON.stringify({

@@ -1,10 +1,11 @@
-import { fetch } from 'undici';
+import { fetch, Response } from 'undici';
 import { readRuntimeResponseText } from '../executors/types.js';
 import { fetchWithObservedFirstByte, isObservedFirstByteTimeoutResponse } from '../firstByteTimeout.js';
 import { withSiteProxyRequestInit } from '../../services/siteProxy.js';
 import {
   buildUpstreamUrl,
   summarizeUpstreamError,
+  summarizeUpstreamExecutionError,
   type UpstreamEndpoint,
 } from './upstreamRequest.js';
 
@@ -121,22 +122,30 @@ export async function executeEndpointFlow(input: ExecuteEndpointFlowInput): Prom
       : defaultTarget;
 
     const attemptStartedAtMs = Date.now();
-    let response = await fetchWithObservedFirstByte(
-      async (signal) => (
-        input.dispatchRequest
-          ? await input.dispatchRequest(request, targetUrl, signal)
-          : await fetch(targetUrl, await withSiteProxyRequestInit(targetUrl, {
-            method: 'POST',
-            headers: request.headers,
-            body: JSON.stringify(request.body),
-            signal,
-          }))
-      ),
-      {
-        firstByteTimeoutMs: input.firstByteTimeoutMs,
-        startedAtMs: attemptStartedAtMs,
-      },
-    );
+    let response: Awaited<ReturnType<typeof fetch>>;
+    try {
+      response = await fetchWithObservedFirstByte(
+        async (signal) => (
+          input.dispatchRequest
+            ? await input.dispatchRequest(request, targetUrl, signal)
+            : await fetch(targetUrl, await withSiteProxyRequestInit(targetUrl, {
+              method: 'POST',
+              headers: request.headers,
+              body: JSON.stringify(request.body),
+              signal,
+            }))
+        ),
+        {
+          firstByteTimeoutMs: input.firstByteTimeoutMs,
+          startedAtMs: attemptStartedAtMs,
+        },
+      );
+    } catch (error) {
+      response = new Response(summarizeUpstreamExecutionError(error), {
+        status: 502,
+        headers: { 'content-type': 'text/plain; charset=utf-8' },
+      });
+    }
 
     if (response.ok) {
       await runEndpointFlowHook(input.onAttemptSuccess, {

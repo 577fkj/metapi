@@ -667,6 +667,7 @@ export function createSurfaceFailureToolkit(input: {
       firstByteLatencyMs?: number | null;
       latencyMs: number;
       retryCount: number;
+      upstreamPath?: string | null;
     }): Promise<SurfaceFailureOutcome> {
       await tokenRouter.recordFailure(args.selected.channel.id, {
         errorText: args.errorMessage,
@@ -682,6 +683,7 @@ export function createSurfaceFailureToolkit(input: {
         latencyMs: args.latencyMs,
         errorMessage: args.errorMessage,
         retryCount: args.retryCount,
+        upstreamPath: args.upstreamPath,
       });
 
       const retry = maybeRetry(args.retryCount);

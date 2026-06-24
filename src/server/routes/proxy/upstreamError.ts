@@ -1,1 +1,4 @@
-export { summarizeUpstreamError } from '../../proxy-core/orchestration/upstreamRequest.js';
+export {
+  summarizeUpstreamError,
+  summarizeUpstreamExecutionError,
+} from '../../proxy-core/orchestration/upstreamRequest.js';

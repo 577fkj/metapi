@@ -23,6 +23,7 @@ import {
 } from '../../services/upstreamEndpointRuntimeMemory.js';
 import { ensureModelAllowedForDownstreamKey, getDownstreamRoutingPolicy, recordDownstreamCostUsage } from '../../routes/proxy/downstreamPolicy.js';
 import { executeEndpointFlow, type BuiltEndpointRequest } from '../orchestration/endpointFlow.js';
+import { summarizeUpstreamExecutionError } from '../orchestration/upstreamRequest.js';
 import { detectProxyFailure } from '../../services/proxyFailureJudge.js';
 import { getProxyAuthContext, getProxyResourceOwner } from '../../middleware/auth.js';
 import { normalizeInputFileBlock } from '../../transformers/shared/inputFile.js';
@@ -1376,8 +1377,8 @@ export async function handleOpenAiResponsesSurfaceRequest(
 	          stickySessionKey,
 	          selected,
 	        });
+          const errorMessage = summarizeUpstreamExecutionError(err);
           if (streamedResponseStarted || reply.raw.headersSent || reply.raw.writableEnded) {
-            const errorMessage = err?.message || 'network failure';
             await failureToolkit.recordStreamFailure({
               selected,
               requestedModel,
@@ -1409,15 +1410,15 @@ export async function handleOpenAiResponsesSurfaceRequest(
           if (isSiteApiEndpointFailure) {
             const failureOutcome = await failureToolkit.handleUpstreamFailure({
               selected,
-          requestedModel,
-          modelName,
-          status: endpointFailureStatus || 502,
-          errText: err?.message || 'unknown error',
-          rawErrText: err?.rawErrText || err?.message || 'unknown error',
-          isStream,
-          latencyMs: Date.now() - startTime,
-          retryCount,
-        });
+              requestedModel,
+              modelName,
+              status: endpointFailureStatus || 502,
+              errText: err?.message || 'unknown error',
+              rawErrText: err?.rawErrText || err?.message || 'unknown error',
+              isStream,
+              latencyMs: Date.now() - startTime,
+              retryCount,
+            });
             const terminalFailureOutcome = failureOutcome.action === 'retry'
               ? (canRetryChannelSelection(retryCount, forcedChannelId)
                 ? null
@@ -1434,30 +1435,31 @@ export async function handleOpenAiResponsesSurfaceRequest(
             );
             return reply.code(terminalFailureOutcome.status).send(terminalFailureOutcome.payload);
           }
-	        const failureOutcome = await failureToolkit.handleExecutionError({
-	          selected,
-	          requestedModel,
+          const failureOutcome = await failureToolkit.handleExecutionError({
+            selected,
+            requestedModel,
             modelName,
-            errorMessage: err?.message || 'network failure',
+            errorMessage,
             isStream,
             latencyMs: Date.now() - startTime,
             retryCount,
+            upstreamPath: activeUpstreamPath,
           });
           const terminalFailureOutcome = failureOutcome.action === 'retry'
             ? (canRetryChannelSelection(retryCount, forcedChannelId)
               ? null
-              : finalizeRetryAsExecutionFailure(err?.message || 'network failure'))
+              : finalizeRetryAsExecutionFailure(errorMessage))
             : failureOutcome;
           if (!terminalFailureOutcome) {
             retryCount += 1;
             continue;
-	        }
-		        await finalizeDebugFailure(
-	            terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
-	            terminalFailureOutcome.payload,
-	            null,
-	          );
-		        return reply.code(terminalFailureOutcome.status).send(terminalFailureOutcome.payload);
+          }
+          await finalizeDebugFailure(
+            terminalFailureOutcome.upstreamStatus ?? terminalFailureOutcome.status,
+            terminalFailureOutcome.payload,
+            activeUpstreamPath,
+          );
+          return reply.code(terminalFailureOutcome.status).send(terminalFailureOutcome.payload);
 	      } finally {
 	        channelLease.release();
 	      }
