@@ -849,6 +849,8 @@ export async function handleOpenAiResponsesSurfaceRequest(
       }
       const channelLease = leaseResult.lease;
 
+      let activeUpstreamPath: string | null = null;
+      let streamedResponseStarted = false;
       try {
         const endpointResult = await runWithSiteApiEndpointPool(selected.site, async (target) => {
           const result = await executeEndpointResultForSiteApiBaseUrl(target.baseUrl);
@@ -865,6 +867,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
 
         const upstream = endpointResult.upstream;
         const successfulUpstreamPath = endpointResult.upstreamPath;
+        activeUpstreamPath = successfulUpstreamPath;
         const firstByteLatencyMs = getObservedResponseMeta(upstream)?.firstByteLatencyMs ?? null;
         const finalizeStreamSuccess = async (
           parsedUsage: UsageSummary,
@@ -908,12 +911,16 @@ export async function handleOpenAiResponsesSurfaceRequest(
         if (isStream) {
           const upstreamContentType = (upstream.headers.get('content-type') || '').toLowerCase();
           const startSseResponse = () => {
+            if (streamedResponseStarted) return;
+            streamedResponseStarted = true;
             reply.hijack();
             reply.raw.statusCode = 200;
-            reply.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-            reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
-            reply.raw.setHeader('Connection', 'keep-alive');
-            reply.raw.setHeader('X-Accel-Buffering', 'no');
+            if (!reply.raw.headersSent) {
+              reply.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+              reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+              reply.raw.setHeader('Connection', 'keep-alive');
+              reply.raw.setHeader('X-Accel-Buffering', 'no');
+            }
           };
 
           let parsedUsage: UsageSummary = {
@@ -926,7 +933,15 @@ export async function handleOpenAiResponsesSurfaceRequest(
           };
           let upstreamUsagePresent = false;
           const writeLines = (lines: string[]) => {
+            startSseResponse();
             for (const line of lines) reply.raw.write(line);
+          };
+          const streamResponse = {
+            end() {
+              if (streamedResponseStarted && !reply.raw.writableEnded) {
+                reply.raw.end();
+              }
+            },
           };
           const websocketTransportRequest = isResponsesWebsocketTransportRequest(request.headers as Record<string, unknown>);
           const streamSession = openAiResponsesTransformer.proxyStream.createSession({
@@ -944,16 +959,16 @@ export async function handleOpenAiResponsesSurfaceRequest(
             },
             writeLines,
             writeRaw: (chunk) => {
+              startSseResponse();
               reply.raw.write(chunk);
             },
           });
           if (!upstreamContentType.includes('text/event-stream')) {
             const rawText = await readRuntimeResponseText(upstream);
             if (looksLikeResponsesSseText(rawText)) {
-              startSseResponse();
               const streamResult = await streamSession.run(
                 createSingleChunkStreamReader(rawText),
-                reply.raw,
+                streamResponse,
               );
               const latency = Date.now() - startTime;
 	              if (streamResult.status === 'failed') {
@@ -1045,8 +1060,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
 	              return reply.code(terminalFailureOutcome.status).send(terminalFailureOutcome.payload);
             }
 
-            startSseResponse();
-            const streamResult = streamSession.consumeUpstreamFinalPayload(upstreamData, rawText, reply.raw);
+            const streamResult = streamSession.consumeUpstreamFinalPayload(upstreamData, rawText, streamResponse);
 	            if (streamResult.status === 'failed') {
 	              clearSurfaceStickyChannel({
 	                stickySessionKey,
@@ -1087,8 +1101,6 @@ export async function handleOpenAiResponsesSurfaceRequest(
 	            return;
 	          }
 
-          startSseResponse();
-
           let replayReader: ReturnType<typeof createSingleChunkStreamReader> | null = null;
           if (websocketTransportRequest) {
             const rawText = await readRuntimeResponseText(upstream);
@@ -1114,7 +1126,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
                 if (codexSessionStoreKey) {
                   rememberCodexSessionResponseId(codexSessionStoreKey, collectedPayload);
                 }
-                reply.raw.end();
+                streamResponse.end();
                 const latency = Date.now() - startTime;
                 await finalizeStreamSuccess(
                   parsedUsage,
@@ -1133,7 +1145,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
 
               const streamResult = await streamSession.run(
                 createSingleChunkStreamReader(rawText),
-                reply.raw,
+                streamResponse,
               );
               const latency = Date.now() - startTime;
               if (streamResult.status === 'failed') {
@@ -1194,7 +1206,7 @@ export async function handleOpenAiResponsesSurfaceRequest(
               },
             }
             : baseReader;
-          const streamResult = await streamSession.run(reader, reply.raw);
+          const streamResult = await streamSession.run(reader, streamResponse);
           rawText += decoder.decode();
 
           const latency = Date.now() - startTime;
@@ -1364,6 +1376,29 @@ export async function handleOpenAiResponsesSurfaceRequest(
 	          stickySessionKey,
 	          selected,
 	        });
+          if (streamedResponseStarted || reply.raw.headersSent || reply.raw.writableEnded) {
+            const errorMessage = err?.message || 'network failure';
+            await failureToolkit.recordStreamFailure({
+              selected,
+              requestedModel,
+              modelName,
+              errorMessage,
+              latencyMs: Date.now() - startTime,
+              retryCount,
+              upstreamPath: activeUpstreamPath,
+              runtimeFailureStatus: 502,
+            });
+            await finalizeDebugFailure(502, {
+              error: {
+                message: errorMessage,
+                type: 'stream_error',
+              },
+            }, activeUpstreamPath);
+            if (!reply.raw.writableEnded) {
+              reply.raw.end();
+            }
+            return;
+          }
           const endpointFailureStatus = typeof err?.status === 'number' ? err.status : null;
           const isSiteApiEndpointFailure = (
             err instanceof SiteApiEndpointRequestError

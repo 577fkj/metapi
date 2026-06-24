@@ -1707,4 +1707,47 @@ describe('responses proxy codex oauth refresh', () => {
     expect(recordFailureMock).not.toHaveBeenCalled();
     expect(recordSuccessMock).toHaveBeenCalledTimes(1);
   });
+
+  it('records upstream path and avoids a second HTTP response when a native responses stream errors after writing', async () => {
+    const encoder = new TextEncoder();
+    let readCount = 0;
+    fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        readCount += 1;
+        if (readCount === 1) {
+          controller.enqueue(encoder.encode([
+            'event: response.created\n',
+            'data: {"type":"response.created","response":{"id":"resp_codex_stream_abort","model":"gpt-5.4","created_at":1706000000,"status":"in_progress","output":[]}}\n\n',
+          ].join('')));
+          return;
+        }
+        controller.error(new Error('upstream stream aborted after first chunk'));
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+    }));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      payload: {
+        model: 'gpt-5.4',
+        input: 'hello codex',
+        stream: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('response.created');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(recordSuccessMock).not.toHaveBeenCalled();
+    expect(recordFailureMock).toHaveBeenCalledTimes(1);
+    expect(insertedProxyLogs.at(-1)).toMatchObject({
+      status: 'failed',
+      httpStatus: 200,
+    });
+    expect(String(insertedProxyLogs.at(-1)?.errorMessage || '')).toContain('[upstream:/responses]');
+    expect(String(insertedProxyLogs.at(-1)?.errorMessage || '')).toContain('upstream stream aborted after first chunk');
+  });
 });
